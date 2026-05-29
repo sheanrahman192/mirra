@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mirra is a conversational coaching iOS/Android app. It records real conversations, analyzes the user's speech for social signals (talk/listen ratio, question frequency, interruptions, energy, vocabulary), and surfaces a debrief card with a score and coaching bullets.
+Mirra is a conversational coaching iOS/Android app. It records real conversations, analyzes the user's speech for social signals (talk/listen ratio, question frequency, interruptions, energy, vocabulary), and surfaces a debrief card with coaching bullets and an AI-powered Reflect chat.
 
 This is a monorepo with two top-level packages:
 - `app/` — React Native (Expo bare workflow + TypeScript)
@@ -57,7 +57,6 @@ The canonical types live in two places — keep them in sync:
 ```ts
 interface DebriefCard {
   id: string; sessionId: string; createdAt: string;
-  score: number;  // 0-100
   observation: string; patternToReduce: string; thingToTryNext: string;
   stats: ConversationStats;
 }
@@ -97,7 +96,7 @@ Control Center widget, Back Tap, and Lock Screen Shortcut all fire `ToggleRecord
 
 - `users` — managed by Supabase Auth
 - `debrief_usage(user_id, month_key UNIQUE WITH user_id, count int)` — monthly usage counter
-- `debriefs(id uuid, user_id, created_at, score, observation, pattern_to_reduce, thing_to_try_next, stats jsonb, transcript text)`
+- `debriefs(id uuid, user_id, created_at, observation, pattern_to_reduce, thing_to_try_next, stats jsonb, transcript text)`
 
 Free tier cap: 5 debriefs/month. Enforced server-side — `POST /sessions` returns 402 when at cap.
 

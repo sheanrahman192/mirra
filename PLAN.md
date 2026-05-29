@@ -2,7 +2,7 @@
 
 ## Context
 
-Mirra is a conversational coaching app that analyzes whether the user is a good *conversationalist* in daily life (not a public speaker). The target user struggles with making conversations engaging and doesn't know what they're doing wrong. Mirra records real conversations, analyzes the user's speech for social signals (talk/listen ratio, question frequency, interruptions, energy, vocabulary), and surfaces a debrief card with a score and actionable coaching.
+Mirra is a conversational coaching app that analyzes whether the user is a good *conversationalist* in daily life (not a public speaker). The target user struggles with making conversations engaging and doesn't know what they're doing wrong. Mirra records real conversations, analyzes the user's speech for social signals (talk/listen ratio, question frequency, interruptions, energy, vocabulary), and surfaces a debrief card with actionable coaching and an AI-powered Reflect chat grounded in the user's data.
 
 This is a greenfield project — the current repo contains only a `README.md` placeholder.
 
@@ -180,7 +180,7 @@ All endpoints require a valid Supabase JWT (verified by `app/auth.py` dependency
 **Supabase DB tables:**
 - `users` — managed by Supabase Auth
 - `debrief_usage` — `(user_id, month_key UNIQUE WITH user_id, count int)`
-- `debriefs` — full debrief records: `(id uuid, user_id, created_at, score, observation, pattern_to_reduce, thing_to_try_next, stats jsonb, transcript text)`
+- `debriefs` — full debrief records: `(id uuid, user_id, created_at, observation, pattern_to_reduce, thing_to_try_next, stats jsonb, transcript text)`
 
 ---
 
@@ -220,7 +220,7 @@ Each phase produces something runnable.
 ### Phase 3 — App ↔ Backend Wiring (Days 12–14)
 - App: `api/sessions.ts` — multipart upload of the recorded WAV; show processing overlay while waiting
 - App: `db/debriefRepo.ts` — `expo-sqlite` schema; insert returned DebriefCard
-- App: `DebriefScreen` — animated score, three coaching bullets, stats bar
+- App: `DebriefScreen` — three coaching bullets, stats bar
 - App: `HistoryScreen` — list from local SQLite; on launch, `GET /debriefs` to sync
 - App: `useUsage` hook — `GET /usage` on launch; `RecordScreen` blocks start if at limit and shows "5/5 used" modal
 - **Validate end-to-end:** fresh install → sign in → record 2 min → see debrief card → kill app → relaunch → card still in history → check Supabase dashboard for matching rows.
@@ -260,7 +260,6 @@ export interface DebriefCard {
   id: string;
   sessionId: string;
   createdAt: string; // ISO
-  score: number;    // 0-100
   observation: string;
   patternToReduce: string;
   thingToTryNext: string;
@@ -293,7 +292,6 @@ class DebriefCard(BaseModel):
     id: str
     session_id: str
     created_at: str
-    score: int  # 0-100
     observation: str
     pattern_to_reduce: str
     thing_to_try_next: str
@@ -358,7 +356,7 @@ Pydantic models serialize to `snake_case` in the API; the RN client converts to 
 1. Fresh install on iOS simulator → sign in with Apple → onboarding → consent
 2. Tap record → speak for 2 minutes (mix of questions, monologuing, pauses) → tap stop
 3. Confirm processing overlay (~10–30s)
-4. Confirm DebriefScreen shows: score in 0–100, 3 non-empty coaching bullets, stats with plausible talk/listen ratio and question count
+4. Confirm DebriefScreen shows: 3 non-empty coaching bullets, stats with plausible talk/listen ratio and question count
 5. Navigate to History → card appears
 6. Force-kill, relaunch → card still in History (SQLite persisted) and synced via `GET /debriefs`
 7. Repeat on Android (Pixel emulator)
