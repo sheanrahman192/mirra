@@ -30,9 +30,10 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
-# Editor
+# Editor / OS
 .DS_Store
 .idea/
 .vscode/
 *.swp
 *.swo
+*.log

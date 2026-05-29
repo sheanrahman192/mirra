@@ -1,6 +1,7 @@
 // Root layout — loads fonts, sets up the stack. Tabs live in (tabs);
 // the single-conversation and reflect screens are pushed on top full-screen.
 import React, { useEffect } from 'react';
+import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -27,7 +28,10 @@ export default function RootLayout() {
     if (loaded) SplashScreen.hideAsync();
   }, [loaded]);
 
-  if (!loaded) return null;
+  // Keep the dawn background visible while fonts load (returning null looks like a blank screen).
+  if (!loaded) {
+    return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
