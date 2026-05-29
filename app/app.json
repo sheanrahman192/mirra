@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Mirra",
+    "slug": "mirra",
+    "scheme": "mirra",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F6EFE0",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#ECE2D2"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mirra.app"
+    },
+    "android": {
+      "package": "com.mirra.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#ECE2D2"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-asset"
+    ]
+  }
+}
