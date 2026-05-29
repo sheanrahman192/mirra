@@ -1,14 +1,16 @@
 // Home / Record screen.
 import React, { useEffect, useRef } from 'react';
-import { View, Pressable, StyleSheet, Animated, Easing } from 'react-native';
+import { View, Pressable, StyleSheet, Animated, Easing, ActivityIndicator } from 'react-native';
 import Svg, { Defs, RadialGradient, Stop, Circle, Rect, Path } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { Screen } from '@/components/Screen';
-import { Card, Pip } from '@/components/ui';
 import { Body, Serif, SerifItalic, Eyebrow } from '@/components/Typography';
 import { Icon } from '@/components/Icon';
 import { colors, toneColor, fonts } from '@/theme/tokens';
 import { RECENTS, Recent } from '@/data/recents';
+import { ConversationListItem } from '@/models/conversation';
+import { useConversations } from '@/hooks/useConversations';
+import { useImportAudio } from '@/hooks/useImportAudio';
 
 const HOME_GREET = "Twelve questions yesterday — your highest this week. Something's clicking.";
 
@@ -61,7 +63,7 @@ function RecordButton({ size = 172 }: { size?: number }) {
   );
 }
 
-function RecentRow({ item, isLast, onPress }: { item: Recent; isLast: boolean; onPress: () => void }) {
+function RecentRow({ item, isLast, onPress }: { item: ConversationListItem | Recent; isLast: boolean; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={[styles.recentRow, !isLast && styles.rowBorder]}>
       <View style={[styles.dot, { backgroundColor: toneColor[item.tone] }]} />
@@ -76,20 +78,40 @@ function RecentRow({ item, isLast, onPress }: { item: Recent; isLast: boolean; o
   );
 }
 
-function ImportButton() {
+function ImportButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
   return (
-    <Pressable style={styles.importBtn} hitSlop={8}>
-      <Svg viewBox="0 0 18 18" width={17} height={17}>
-        <Path d="M9 11.5V2.5" fill="none" stroke={colors.terracotta} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-        <Path d="M5.5 6L9 2.5L12.5 6" fill="none" stroke={colors.terracotta} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-        <Path d="M3 11v3a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5v-3" fill="none" stroke={colors.terracotta} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-      </Svg>
+    <Pressable
+      style={[styles.importBtn, loading && styles.importBtnDisabled]}
+      hitSlop={8}
+      onPress={onPress}
+      disabled={loading}
+      accessibilityLabel="Import audio recording"
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color={colors.terracotta} />
+      ) : (
+        <Svg viewBox="0 0 18 18" width={17} height={17}>
+          <Path d="M9 11.5V2.5" fill="none" stroke={colors.terracotta} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+          <Path d="M5.5 6L9 2.5L12.5 6" fill="none" stroke={colors.terracotta} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+          <Path d="M3 11v3a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5v-3" fill="none" stroke={colors.terracotta} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+        </Svg>
+      )}
     </Pressable>
   );
 }
 
 export function HomeScreen() {
   const router = useRouter();
+  const { listItems, save } = useConversations();
+  const { importAudio, importing } = useImportAudio();
+
+  const recents: (ConversationListItem | Recent)[] =
+    listItems.length > 0 ? listItems : RECENTS;
+
+  async function handleImport() {
+    const conversation = await importAudio();
+    if (conversation) await save(conversation);
+  }
   return (
     <Screen topOffset={56}>
       {/* Header */}
@@ -101,7 +123,7 @@ export function HomeScreen() {
             <SerifItalic style={styles.greetingTitle}>Maya.</SerifItalic>
           </Serif>
         </View>
-        <ImportButton />
+        <ImportButton onPress={handleImport} loading={importing} />
       </View>
       <Body style={styles.greet}>{HOME_GREET}</Body>
 
@@ -115,11 +137,13 @@ export function HomeScreen() {
       <View style={styles.recentSection}>
         <View style={styles.recentHead}>
           <Eyebrow>Recent conversations</Eyebrow>
-          <Body style={styles.recentCount}>5 this week</Body>
+          <Body style={styles.recentCount}>
+            {listItems.length > 0 ? `${listItems.length} imported` : '5 this week'}
+          </Body>
         </View>
         <View style={{ marginTop: 6 }}>
-          {RECENTS.map((r, i) => (
-            <RecentRow key={r.id} item={r} isLast={i === RECENTS.length - 1} onPress={() => router.push('/conversation')} />
+          {recents.map((r, i) => (
+            <RecentRow key={String(r.id)} item={r} isLast={i === recents.length - 1} onPress={() => router.push('/conversation')} />
           ))}
         </View>
       </View>
@@ -136,6 +160,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.card, borderWidth: 1, borderColor: colors.hairline,
   },
+  importBtnDisabled: { opacity: 0.6 },
   hero: { marginTop: 28, marginBottom: 18, alignItems: 'center', gap: 16 },
   recordBtn: {
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
