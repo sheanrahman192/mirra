@@ -107,3 +107,22 @@ Free tier cap: 5 debriefs/month. Enforced server-side — `POST /sessions` retur
 | `POST /sessions` | multipart `audio` (WAV/M4A ≤25MB) + JSON metadata → runs pipeline → returns `{ debrief, usedThisMonth, remaining }` |
 | `GET /debriefs` | paginated debrief history for the authenticated user |
 | `GET /usage` | `{ usedThisMonth, remaining, resetsAt }` |
+
+## Backend Integration Status
+
+The frontend is fully client-side with mock data — no backend calls are wired up yet. All screens consume static imports from `app/src/data/`. The integration work is replacing those imports with API hooks.
+
+**API boundary:** All fetch calls go through `app/api/client.ts`, which handles snake_case → camelCase conversion. New hooks should use this file.
+
+**Integration gaps — mock file → hook to write → endpoint:**
+
+| Screen | Mock file | Hook to write | Endpoint |
+|---|---|---|---|
+| HomeScreen recent list | `src/data/recents.ts` | `useDebriefs` | `GET /debriefs` |
+| HomeScreen record button | (no-op) | `useRecorder` | `POST /sessions` (multipart WAV) |
+| AnalyticsScreen conversation data | `src/data/weeks.ts` (single conv slice) | fetch by id via `useDebriefs` | `GET /debriefs` or debrief from session response |
+| ProgressScreen / InsightsIndexScreen weekly stats | `src/data/weeks.ts` | `useDebriefs` + client-side aggregation | `GET /debriefs` |
+| ProfileScreen usage pill | hardcoded | `useUsage` | `GET /usage` |
+| ReflectScreen AI chat | `src/data/reflect.ts` (canned replies) | `useReflect` | Not yet built in backend |
+
+**Data models are already aligned** — `backend/app/models/debrief.py` matches the TypeScript `DebriefCard`/`ConversationStats` interfaces in `app/src/models/`. No schema changes needed for initial wiring.
