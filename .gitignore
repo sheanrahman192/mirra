@@ -30,6 +30,9 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
+# Claude Code
+.claude/settings.local.json
+
 # Editor / OS
 .DS_Store
 .idea/
