@@ -1,0 +1,8 @@
+# Supabase CLI project config.
+# Link to the remote project with: supabase link --project-ref qugmkzpfonhhrsyjghrx
+# Apply checked-in migrations with: supabase db push
+project_id = "qugmkzpfonhhrsyjghrx"
+
+[db]
+# Postgres major version of the linked project.
+major_version = 15
