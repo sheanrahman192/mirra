@@ -22,3 +22,9 @@ class Debrief(BaseModel):
     thing_to_try_next: str
     stats: ConversationStats
     transcript: str | None = None
+
+
+class SessionResponse(BaseModel):
+    debrief: Debrief
+    used_this_month: int
+    remaining: int
