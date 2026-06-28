@@ -84,7 +84,7 @@ export function ProgressScreen() {
   return (
     <Screen topOffset={50}>
       <View style={{ paddingTop: 4 }}>
-        <WeekPaginator idx={weekIdx} onChange={setWeekIdx} />
+        <WeekPaginator weeks={WEEKS} idx={weekIdx} onChange={setWeekIdx} />
       </View>
 
       {/* Title + intro */}

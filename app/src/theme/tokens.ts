@@ -27,15 +27,6 @@ export const colors = {
   hair: 'rgba(42,37,32,0.10)',
 } as const;
 
-// Tone → dot color (used by conversation rows)
-export const toneColor: Record<string, string> = {
-  sage: colors.sage,
-  terracotta: colors.terracotta,
-  lavender: colors.lavender,
-  coral: colors.coral,
-  sand: colors.sand,
-};
-
 // Font families — loaded in app/_layout.tsx via @expo-google-fonts.
 export const fonts = {
   // Display serif (Instrument Serif). Maps to the .serif / .serif-i classes.
@@ -46,13 +37,6 @@ export const fonts = {
   bodyMedium: 'Inter_500Medium',
   bodySemibold: 'Inter_600SemiBold',
   bodyLight: 'Inter_300Light',
-} as const;
-
-export const radii = {
-  sm: 12,
-  md: 18,
-  lg: 24,
-  xl: 32,
 } as const;
 
 // Soft drop shadow used by Card and floating elements.

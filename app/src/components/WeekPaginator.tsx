@@ -9,7 +9,6 @@ import Svg, { Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Body } from './Typography';
 import { colors, fonts, cardShadow } from '@/theme/tokens';
-import { WEEKS } from '@/data/weeks';
 
 function Chevron({ dir, disabled }: { dir: 'left' | 'right'; disabled: boolean }) {
   const color = disabled ? 'rgba(42,37,32,0.2)' : colors.muted;
@@ -20,8 +19,8 @@ function Chevron({ dir, disabled }: { dir: 'left' | 'right'; disabled: boolean }
   );
 }
 
-export function WeekPaginator({ idx, onChange }: { idx: number; onChange: (i: number) => void }) {
-  const count = WEEKS.length;
+export function WeekPaginator({ weeks, idx, onChange }: { weeks: { label: string; upcoming?: boolean }[]; idx: number; onChange: (i: number) => void }) {
+  const count = weeks.length;
   const scrollRef = useRef<ScrollView>(null);
   const layouts = useRef<{ x: number; w: number }[]>([]);
   const scrollX = useRef(0);
@@ -63,7 +62,7 @@ export function WeekPaginator({ idx, onChange }: { idx: number; onChange: (i: nu
         onMomentumScrollEnd={onMomentumEnd}
         contentContainerStyle={{ paddingHorizontal: containerW ? containerW / 2 - 8 : 50, alignItems: 'center', gap: 10 }}
       >
-        {WEEKS.map((w, i) => {
+        {weeks.map((w, i) => {
           const isActive = i === idx;
           return (
             <Pressable

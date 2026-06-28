@@ -1,8 +1,6 @@
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
 export function formatConversationWhen(iso: string): string {
   const d = new Date(iso);
-  const day = DAY_LABELS[d.getDay()];
+  const day = d.toLocaleDateString(undefined, { weekday: 'short' });
   const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   return `${day} · ${time}`;
 }

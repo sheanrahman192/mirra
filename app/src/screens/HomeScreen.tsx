@@ -6,7 +6,7 @@ import { useRouter } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { Body, Serif, SerifItalic, Eyebrow } from '@/components/Typography';
 import { Icon } from '@/components/Icon';
-import { colors, toneColor, fonts } from '@/theme/tokens';
+import { colors, fonts } from '@/theme/tokens';
 import { RECENTS, Recent } from '@/data/recents';
 import { ConversationListItem } from '@/models/conversation';
 import { useConversations } from '@/hooks/useConversations';
@@ -66,7 +66,7 @@ function RecordButton({ size = 172 }: { size?: number }) {
 function RecentRow({ item, isLast, onPress }: { item: ConversationListItem | Recent; isLast: boolean; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={[styles.recentRow, !isLast && styles.rowBorder]}>
-      <View style={[styles.dot, { backgroundColor: toneColor[item.tone] }]} />
+      <View style={[styles.dot, { backgroundColor: colors[item.tone as keyof typeof colors] ?? colors.sage }]} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Serif style={styles.recentTitle}>{item.title}</Serif>
         <Body style={styles.recentMeta}>

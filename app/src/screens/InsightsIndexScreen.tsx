@@ -6,13 +6,13 @@ import { Screen } from '@/components/Screen';
 import { Body, Serif, SerifItalic, Eyebrow } from '@/components/Typography';
 import { Icon } from '@/components/Icon';
 import { WeekPaginator } from '@/components/WeekPaginator';
-import { colors, toneColor } from '@/theme/tokens';
+import { colors } from '@/theme/tokens';
 import { WEEKS, ConvListItem, fullDay } from '@/data/weeks';
 
 function ConvRow({ item, isLast, onPress }: { item: ConvListItem; isLast: boolean; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={[styles.row, !isLast && styles.rowBorder]}>
-      <View style={[styles.dot, { backgroundColor: toneColor[item.tone] || colors.sage }]} />
+      <View style={[styles.dot, { backgroundColor: colors[item.tone as keyof typeof colors] ?? colors.sage }]} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Serif style={styles.title}>{item.title}</Serif>
         <Body style={styles.meta}>
@@ -47,7 +47,7 @@ export function InsightsIndexScreen() {
   return (
     <Screen topOffset={50}>
       <View style={{ paddingTop: 4 }}>
-        <WeekPaginator idx={weekIdx} onChange={setWeekIdx} />
+        <WeekPaginator weeks={WEEKS} idx={weekIdx} onChange={setWeekIdx} />
       </View>
 
       <View style={styles.titleBlock}>
