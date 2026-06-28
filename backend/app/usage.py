@@ -26,7 +26,7 @@ def get_usage(db: Client, user_id: str) -> dict:
         .maybe_single()
         .execute()
     )
-    used = row.data["count"] if row.data else 0
+    used = row.data["count"] if row and row.data else 0
     return {
         "used_this_month": used,
         "remaining": max(0, settings.free_tier_cap - used),
@@ -44,11 +44,11 @@ def check_and_increment(db: Client, user_id: str) -> None:
         .maybe_single()
         .execute()
     )
-    used = row.data["count"] if row.data else 0
+    used = row.data["count"] if row and row.data else 0
     if used >= settings.free_tier_cap:
         raise HTTPException(status_code=402, detail="Monthly debrief limit reached")
     # ponytail: non-atomic read-modify-write; race window acceptable at 5/month cap; use DB-level increment if throughput matters
-    if row.data:
+    if row and row.data:
         (
             db.table("debrief_usage")
             .update({"count": used + 1})
