@@ -33,6 +33,8 @@ yarn-error.*
 
 # Claude Code
 .claude/settings.local.json
+.claude/scratchpad.md
+HANDOVER.md
 
 # Agent skills (installed via `npx skills add` — kept local, not shared)
 .agents/
