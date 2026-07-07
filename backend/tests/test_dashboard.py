@@ -54,6 +54,15 @@ class _Result:
     data: object
 
 
+class _HttpResponse:
+    def __init__(self, status_code: int, payload: dict):
+        self.status_code = status_code
+        self.payload = payload
+
+    def json(self):
+        return self.payload
+
+
 class _Table:
     def __init__(self, name: str, rows: list[dict], used: int):
         self.name = name
@@ -174,6 +183,9 @@ def test_progress_endpoint():
 
 
 def test_reflect_fallback_without_anthropic_key(monkeypatch):
+    monkeypatch.setattr("app.open_model.settings.open_model_api_key", "")
+    monkeypatch.setattr("app.open_model.settings.hf_token", "")
+    monkeypatch.setattr("app.open_model.settings.huggingface_api_key", "")
     monkeypatch.setattr("app.main.settings.anthropic_api_key", "")
     r = _client([ROW_1]).post("/reflect", json={"conversation_id": ROW_1["id"], "prompt": "How were my questions?"})
     assert r.status_code == 200
@@ -181,7 +193,52 @@ def test_reflect_fallback_without_anthropic_key(monkeypatch):
     assert "9 questions" in r.json()["reply"]
 
 
+def test_reflect_uses_open_model_when_configured(monkeypatch):
+    monkeypatch.setattr("app.open_model.settings.open_model_api_key", "hf-test")
+    monkeypatch.setattr("app.open_model.settings.hf_token", "")
+    monkeypatch.setattr("app.open_model.settings.huggingface_api_key", "")
+    monkeypatch.setattr("app.open_model.settings.open_model_name", "Qwen/Qwen2.5-7B-Instruct-1M:fastest")
+    monkeypatch.setattr("app.main.settings.anthropic_api_key", "")
+    response = _HttpResponse(
+        200,
+        {"choices": [{"message": {"content": "An open model reply."}}]},
+    )
+    with patch("app.open_model.httpx.post", return_value=response) as post:
+        r = _client([ROW_1]).post(
+            "/reflect",
+            json={
+                "conversation_id": ROW_1["id"],
+                "prompt": "What worked?",
+                "messages": [{"role": "user", "content": "Can you help me reflect?"}],
+            },
+        )
+
+    assert r.status_code == 200
+    assert r.json() == {"reply": "An open model reply.", "used_model": True}
+    _args, kwargs = post.call_args
+    assert kwargs["headers"]["Authorization"] == "Bearer hf-test"
+    assert kwargs["json"]["model"] == "Qwen/Qwen2.5-7B-Instruct-1M:fastest"
+    assert kwargs["json"]["messages"][0]["role"] == "system"
+    assert "Coffee with Maya" in kwargs["json"]["messages"][-1]["content"]
+
+
+def test_reflect_falls_back_when_open_model_errors(monkeypatch):
+    monkeypatch.setattr("app.open_model.settings.open_model_api_key", "hf-test")
+    monkeypatch.setattr("app.open_model.settings.hf_token", "")
+    monkeypatch.setattr("app.open_model.settings.huggingface_api_key", "")
+    monkeypatch.setattr("app.main.settings.anthropic_api_key", "")
+    with patch("app.open_model.httpx.post", return_value=_HttpResponse(500, {})):
+        r = _client([ROW_1]).post("/reflect", json={"conversation_id": ROW_1["id"], "prompt": "How were my questions?"})
+
+    assert r.status_code == 200
+    assert r.json()["used_model"] is False
+    assert "9 questions" in r.json()["reply"]
+
+
 def test_reflect_uses_model_when_configured(monkeypatch):
+    monkeypatch.setattr("app.open_model.settings.open_model_api_key", "")
+    monkeypatch.setattr("app.open_model.settings.hf_token", "")
+    monkeypatch.setattr("app.open_model.settings.huggingface_api_key", "")
     monkeypatch.setattr("app.main.settings.anthropic_api_key", "test-key")
     block = type("Block", (), {"type": "text", "text": "A model reply."})()
     with patch("anthropic.Anthropic") as anthropic:

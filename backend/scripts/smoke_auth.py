@@ -9,6 +9,7 @@ import urllib.request
 
 
 BASE_URL = os.environ.get("MIRRA_BACKEND_URL", "http://localhost:8000").rstrip("/")
+REQUIRE_MODEL = os.environ.get("MIRRA_REQUIRE_MODEL", "").lower() in {"1", "true", "yes"}
 
 
 def request(
@@ -87,8 +88,11 @@ def main() -> int:
         {"prompt": "What should I notice?", "messages": []},
         auth_headers,
     )
-    print("reflect", reflect_code, {"has_reply": bool(reflect.get("reply"))})
+    print("reflect", reflect_code, {"has_reply": bool(reflect.get("reply")), "used_model": bool(reflect.get("used_model"))})
     if reflect_code != 200 or not reflect.get("reply"):
+        return 1
+    if REQUIRE_MODEL and not reflect.get("used_model"):
+        print("reflect model smoke failed: configure OPEN_MODEL_API_KEY or HF_TOKEN")
         return 1
 
     if not status.get("google_enabled"):
