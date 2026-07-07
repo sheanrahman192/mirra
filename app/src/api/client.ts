@@ -1,5 +1,15 @@
 import { env } from '@/config/env';
-import { DebriefCard, SessionResponse, UsageSummary } from '@/models/debrief';
+import {
+  ConversationSummary,
+  DebriefCard,
+  FillerCount,
+  ProfileSummary,
+  ProgressSummary,
+  ProgressWeekSummary,
+  ReflectMessage,
+  SessionResponse,
+  UsageSummary,
+} from '@/models/debrief';
 
 type RawStats = {
   talk_listen_ratio: number;
@@ -8,6 +18,7 @@ type RawStats = {
   session_duration_minutes: number;
   user_speech_duration_minutes: number;
   estimated_wpm: number;
+  metadata?: Record<string, unknown>;
 };
 
 type RawDebrief = {
@@ -23,6 +34,61 @@ type RawDebrief = {
 };
 
 type RawUsage = {
+  used_this_month: number;
+  remaining: number;
+  resets_at: string;
+};
+
+type RawConversationSummary = {
+  id: string;
+  title: string;
+  created_at: string;
+  duration_minutes: number;
+  talk_listen_percent: number;
+  question_count: number;
+  interruption_count: number;
+  tone: string;
+  note: string;
+};
+
+type RawFillerCount = {
+  phrase: string;
+  count: number;
+};
+
+type RawProgressWeek = {
+  week_key: string;
+  label: string;
+  starts_at: string;
+  ends_at: string;
+  conversation_count: number;
+  total_minutes: number;
+  daily_minutes: number[];
+  daily_questions: number[];
+  daily_interruptions: number[];
+  average_session_minutes: number;
+  talk_listen_percent: number;
+  average_questions: number;
+  total_questions: number;
+  interruption_count: number;
+  average_wpm: number;
+  top_fillers: RawFillerCount[];
+  wins: string[];
+  nudges: string[];
+  conversations: RawConversationSummary[];
+};
+
+type RawProgressSummary = {
+  generated_at: string;
+  current_week_index: number;
+  weeks: RawProgressWeek[];
+};
+
+type RawProfileSummary = {
+  total_conversations: number;
+  total_minutes: number;
+  average_questions: number;
+  talk_listen_percent: number;
   used_this_month: number;
   remaining: number;
   resets_at: string;
@@ -75,6 +141,68 @@ function toUsage(raw: RawUsage): UsageSummary {
   };
 }
 
+function toConversationSummary(raw: RawConversationSummary): ConversationSummary {
+  return {
+    id: raw.id,
+    title: raw.title,
+    createdAt: raw.created_at,
+    durationMinutes: raw.duration_minutes,
+    talkListenPercent: raw.talk_listen_percent,
+    questionCount: raw.question_count,
+    interruptionCount: raw.interruption_count,
+    tone: raw.tone,
+    note: raw.note,
+  };
+}
+
+function toFillerCount(raw: RawFillerCount): FillerCount {
+  return { phrase: raw.phrase, count: raw.count };
+}
+
+function toProgressWeek(raw: RawProgressWeek): ProgressWeekSummary {
+  return {
+    weekKey: raw.week_key,
+    label: raw.label,
+    startsAt: raw.starts_at,
+    endsAt: raw.ends_at,
+    conversationCount: raw.conversation_count,
+    totalMinutes: raw.total_minutes,
+    dailyMinutes: raw.daily_minutes,
+    dailyQuestions: raw.daily_questions,
+    dailyInterruptions: raw.daily_interruptions,
+    averageSessionMinutes: raw.average_session_minutes,
+    talkListenPercent: raw.talk_listen_percent,
+    averageQuestions: raw.average_questions,
+    totalQuestions: raw.total_questions,
+    interruptionCount: raw.interruption_count,
+    averageWpm: raw.average_wpm,
+    topFillers: raw.top_fillers.map(toFillerCount),
+    wins: raw.wins,
+    nudges: raw.nudges,
+    conversations: raw.conversations.map(toConversationSummary),
+  };
+}
+
+function toProgressSummary(raw: RawProgressSummary): ProgressSummary {
+  return {
+    generatedAt: raw.generated_at,
+    currentWeekIndex: raw.current_week_index,
+    weeks: raw.weeks.map(toProgressWeek),
+  };
+}
+
+function toProfileSummary(raw: RawProfileSummary): ProfileSummary {
+  return {
+    totalConversations: raw.total_conversations,
+    totalMinutes: raw.total_minutes,
+    averageQuestions: raw.average_questions,
+    talkListenPercent: raw.talk_listen_percent,
+    usedThisMonth: raw.used_this_month,
+    remaining: raw.remaining,
+    resetsAt: raw.resets_at,
+  };
+}
+
 export async function fetchUsage(token: string): Promise<UsageSummary> {
   const raw = await fetch(endpoint('/usage'), {
     headers: { Authorization: `Bearer ${token}` },
@@ -87,6 +215,43 @@ export async function fetchDebriefs(token: string): Promise<DebriefCard[]> {
     headers: { Authorization: `Bearer ${token}` },
   }).then((r) => parseResponse<RawDebrief[]>(r));
   return raw.map(toDebrief);
+}
+
+export async function fetchDebrief(token: string, id: string): Promise<DebriefCard> {
+  const raw = await fetch(endpoint(`/debriefs/${encodeURIComponent(id)}`), {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then((r) => parseResponse<RawDebrief>(r));
+  return toDebrief(raw);
+}
+
+export async function fetchProgressSummary(token: string): Promise<ProgressSummary> {
+  const raw = await fetch(endpoint('/analytics/progress'), {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then((r) => parseResponse<RawProgressSummary>(r));
+  return toProgressSummary(raw);
+}
+
+export async function fetchProfileSummary(token: string): Promise<ProfileSummary> {
+  const raw = await fetch(endpoint('/profile/summary'), {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then((r) => parseResponse<RawProfileSummary>(r));
+  return toProfileSummary(raw);
+}
+
+export async function sendReflection(
+  token: string,
+  payload: { conversationId?: string; prompt: string; messages: ReflectMessage[] }
+): Promise<string> {
+  const raw = await fetch(endpoint('/reflect'), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      conversation_id: payload.conversationId,
+      prompt: payload.prompt,
+      messages: payload.messages,
+    }),
+  }).then((r) => parseResponse<{ reply: string; used_model: boolean }>(r));
+  return raw.reply;
 }
 
 export async function uploadSession(

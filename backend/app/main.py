@@ -8,8 +8,10 @@ from supabase import Client
 
 from app.auth import verify_token
 from app.config import settings
+from app.dashboard import build_profile_summary, build_progress, fallback_reflection
 from app.db import get_db
 from app.models.auth import UsernameAuthRequest, UsernameAuthResponse
+from app.models.dashboard import ProfileSummary, ProgressResponse, ReflectRequest, ReflectResponse
 from app.models.debrief import Debrief, SessionResponse
 from app.pipeline import coordinator
 from app.usage import check_and_increment, get_usage
@@ -109,6 +111,30 @@ async def _password_token(email: str, password: str) -> dict:
     return response.json()
 
 
+def _fetch_debrief_rows(db: Client, user_id: str, limit: int = 100, offset: int = 0) -> list[dict]:
+    result = (
+        db.table("debriefs")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .range(offset, offset + limit - 1)
+        .execute()
+    )
+    return result.data or []
+
+
+def _fetch_debrief_row(db: Client, user_id: str, debrief_id: str) -> dict | None:
+    result = (
+        db.table("debriefs")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("id", debrief_id)
+        .maybe_single()
+        .execute()
+    )
+    return result.data if result and result.data else None
+
+
 @app.post("/auth/username/sign-up", response_model=UsernameAuthResponse)
 async def username_sign_up(payload: UsernameAuthRequest):
     username = _normalize_username(payload.username)
@@ -146,6 +172,22 @@ async def username_sign_in(payload: UsernameAuthRequest):
 @app.get("/usage")
 def usage(user_id: str = Depends(verify_token), db: Client = Depends(get_db)):
     return get_usage(db, user_id)
+
+
+@app.get("/profile/summary", response_model=ProfileSummary)
+def profile_summary(user_id: str = Depends(verify_token), db: Client = Depends(get_db)):
+    rows = _fetch_debrief_rows(db, user_id, limit=500)
+    return build_profile_summary(rows, get_usage(db, user_id))
+
+
+@app.get("/analytics/progress", response_model=ProgressResponse)
+def progress_summary(
+    weeks: int = Query(8, ge=1, le=26),
+    user_id: str = Depends(verify_token),
+    db: Client = Depends(get_db),
+):
+    rows = _fetch_debrief_rows(db, user_id, limit=500)
+    return build_progress(rows, max_weeks=weeks)
 
 
 @app.post("/sessions", response_model=SessionResponse)
@@ -202,12 +244,70 @@ def debriefs(
     user_id: str = Depends(verify_token),
     db: Client = Depends(get_db),
 ):
-    result = (
-        db.table("debriefs")
-        .select("*")
-        .eq("user_id", user_id)
-        .order("created_at", desc=True)
-        .range(offset, offset + limit - 1)
-        .execute()
-    )
-    return result.data
+    return _fetch_debrief_rows(db, user_id, limit=limit, offset=offset)
+
+
+@app.get("/debriefs/{debrief_id}", response_model=Debrief)
+def debrief_detail(
+    debrief_id: str,
+    user_id: str = Depends(verify_token),
+    db: Client = Depends(get_db),
+):
+    row = _fetch_debrief_row(db, user_id, debrief_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Debrief not found")
+    return row
+
+
+@app.post("/reflect", response_model=ReflectResponse)
+def reflect(
+    payload: ReflectRequest,
+    user_id: str = Depends(verify_token),
+    db: Client = Depends(get_db),
+):
+    if payload.conversation_id:
+        row = _fetch_debrief_row(db, user_id, str(payload.conversation_id))
+        if not row:
+            raise HTTPException(status_code=404, detail="Debrief not found")
+        rows = [row]
+    else:
+        rows = _fetch_debrief_rows(db, user_id, limit=1)
+
+    if not settings.anthropic_api_key:
+        return {"reply": fallback_reflection(rows, payload.prompt), "used_model": False}
+
+    try:
+        import anthropic
+
+        context = rows[0] if rows else {}
+        system = (
+            "You are Mirra, a warm and concise conversation coach. "
+            "Use the supplied debrief context when available. Keep replies to 1-3 sentences."
+        )
+        history = [
+            {
+                "role": "assistant" if message.role == "assistant" else "user",
+                "content": message.content,
+            }
+            for message in payload.messages[-12:]
+            if message.role in {"assistant", "user"}
+        ]
+        history.append(
+            {
+                "role": "user",
+                "content": f"Debrief context:\n{context}\n\nUser prompt:\n{payload.prompt}",
+            }
+        )
+        response = anthropic.Anthropic(api_key=settings.anthropic_api_key).messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=350,
+            system=system,
+            messages=history,
+        )
+        text = "\n".join(block.text for block in response.content if getattr(block, "type", None) == "text").strip()
+        if text:
+            return {"reply": text, "used_model": True}
+    except Exception:
+        pass
+
+    return {"reply": fallback_reflection(rows, payload.prompt), "used_model": False}

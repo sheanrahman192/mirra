@@ -9,8 +9,7 @@ import { Body, Serif, SerifItalic, Eyebrow } from '@/components/Typography';
 import { Icon } from '@/components/Icon';
 import { colors, fonts } from '@/theme/tokens';
 import { useAuth } from '@/auth/AuthContext';
-import { useDebriefs } from '@/hooks/useDebriefs';
-import { useUsage } from '@/hooks/useUsage';
+import { useProfileSummary } from '@/hooks/useProfileSummary';
 
 function Avatar({ initials = 'MC', size = 84 }: { initials?: string; size?: number }) {
   return (
@@ -56,16 +55,15 @@ function Check({ color }: { color: string }) {
 
 export function ProfileScreen() {
   const { user, signOut } = useAuth();
-  const { debriefs } = useDebriefs();
-  const { usage } = useUsage();
+  const { summary } = useProfileSummary();
   const username = typeof user?.user_metadata?.username === 'string' ? user.user_metadata.username : null;
   const label = username ? `@${username}` : user?.email ?? 'signed in';
   const initials = (username ?? user?.email ?? 'MI').slice(0, 2).toUpperCase();
   const memberSince = user?.created_at
     ? new Date(user.created_at).toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
     : 'Now';
-  const used = usage?.usedThisMonth ?? 0;
-  const remaining = usage?.remaining ?? 5;
+  const used = summary?.usedThisMonth ?? 0;
+  const remaining = summary?.remaining ?? 5;
 
   return (
     <Screen topOffset={50}>
@@ -89,7 +87,7 @@ export function ProfileScreen() {
 
       {/* Stats */}
       <View style={styles.stats}>
-        <StatPill value={String(debriefs.length)} label="Conversations" accent={colors.terracotta} />
+        <StatPill value={String(summary?.totalConversations ?? 0)} label="Conversations" accent={colors.terracotta} />
         <StatPill value={String(used)} label="Used this month" accent={colors.sage} />
         <StatPill value={memberSince} label="Member since" accent={colors.lavender} />
       </View>

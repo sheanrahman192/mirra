@@ -1,5 +1,5 @@
 // Insights · single conversation — "Coffee with Maya" deep-dive.
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '@/components/Screen';
@@ -13,6 +13,9 @@ import { Donut, RingMeter, RadarChart, TurnOffsetChart, EnergyWave } from '@/com
 import { FillerBars, SyncBars, OffsetZoneLegend } from '@/components/meters';
 import { colors, fonts } from '@/theme/tokens';
 import { useDebriefs, toConversationListItem } from '@/hooks/useDebriefs';
+import { useAuth } from '@/auth/AuthContext';
+import { fetchDebrief } from '@/api/client';
+import { DebriefCard } from '@/models/debrief';
 
 const TAB_HREF: Record<TabId, '/' | '/insights' | '/progress' | '/profile'> = {
   home: '/', insights: '/insights', progress: '/progress', profile: '/profile',
@@ -40,8 +43,30 @@ function QBar({ label, value, color, sub, max }: { label: string; value: number;
 export function AnalyticsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id?: string }>();
+  const { accessToken } = useAuth();
   const { debriefs } = useDebriefs();
-  const selected = debriefs.find((d) => d.id === id) ?? debriefs[0] ?? null;
+  const [remoteDebrief, setRemoteDebrief] = useState<DebriefCard | null>(null);
+  const localDebrief = debriefs.find((d) => d.id === id) ?? null;
+
+  useEffect(() => {
+    let mounted = true;
+    setRemoteDebrief(null);
+    if (!id || localDebrief || !accessToken) return;
+
+    fetchDebrief(accessToken, id)
+      .then((debrief) => {
+        if (mounted) setRemoteDebrief(debrief);
+      })
+      .catch(() => {
+        if (mounted) setRemoteDebrief(null);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [accessToken, id, localDebrief]);
+
+  const selected = localDebrief ?? remoteDebrief ?? debriefs[0] ?? null;
   const selectedListItem = selected ? toConversationListItem(selected) : null;
   const title = selectedListItem?.title ?? 'Coffee with Maya';
   const meta = selectedListItem
@@ -55,6 +80,12 @@ export function AnalyticsScreen() {
   const questions = selected?.stats.questionCount ?? 8;
   const interruptions = selected?.stats.interruptionCount ?? 3;
   const durationMin = selected?.stats.sessionDurationMinutes ?? 28;
+  const userSpeechMin = selected?.stats.userSpeechDurationMinutes ?? 17.37;
+  const otherSpeechMin = Math.max(0, durationMin - userSpeechMin);
+  const openQuestions = Math.max(0, Math.round(questions * 0.65));
+  const closedQuestions = Math.max(0, questions - openQuestions);
+  const otherQuestions = Math.max(0, Math.round(questions * 0.75));
+  const questionMax = Math.max(questions, otherQuestions, 1) * 1.15;
   const goTab = (id: TabId) => router.navigate(TAB_HREF[id]);
 
   return (
@@ -82,7 +113,7 @@ export function AnalyticsScreen() {
             <SerifItalic style={[styles.reflectText, { color: colors.terracotta }]}>{pattern}</SerifItalic>
             {' '}to notice. {next}
           </Serif>
-          <ReflectCTA subject={title.toLowerCase()} onPress={() => router.push('/reflect')} />
+          <ReflectCTA subject={title.toLowerCase()} onPress={() => router.push({ pathname: '/reflect', params: selected ? { id: selected.id } : {} })} />
         </Card>
       </View>
 
@@ -100,14 +131,14 @@ export function AnalyticsScreen() {
           blurb="Maya had a lot to share today and you mostly let her lead the second half."
         >
           <View style={styles.rowCenter}>
-            <Donut size={130} stroke={20} segments={[{ value: 62, color: colors.terracotta }, { value: 38, color: colors.sage }]} centerLabel="62%" centerSub="you" />
+            <Donut size={130} stroke={20} segments={[{ value: talkPct, color: colors.terracotta }, { value: listenPct, color: colors.sage }]} centerLabel={`${talkPct}%`} centerSub="you" />
             <View style={{ gap: 10, flex: 1 }}>
               <View>
-                <Pip color={colors.terracotta}>You · 17:22</Pip>
-                <Body style={styles.pipNote}>Talked 22% more than your average</Body>
+                <Pip color={colors.terracotta}>You · {Math.round(userSpeechMin)} min</Pip>
+                <Body style={styles.pipNote}>Estimated from detected speech segments</Body>
               </View>
               <View>
-                <Pip color={colors.sage}>Maya · 10:38</Pip>
+                <Pip color={colors.sage}>Them · {Math.round(otherSpeechMin)} min</Pip>
                 <Body style={styles.pipNote}>Healthy range: 40–60% you</Body>
               </View>
             </View>
@@ -122,31 +153,31 @@ export function AnalyticsScreen() {
         >
           <View style={styles.qRow}>
             <View style={styles.qBars}>
-              <QBar label="You" value={8} color={colors.sage} sub="asked" max={8 * 1.15} />
-              <QBar label="Maya" value={7} color={colors.lavender} sub="asked" max={8 * 1.15} />
+              <QBar label="You" value={questions} color={colors.sage} sub="asked" max={questionMax} />
+              <QBar label="Them" value={otherQuestions} color={colors.lavender} sub="estimated" max={questionMax} />
             </View>
             <View style={styles.qAnalysis}>
               <View style={[styles.miniCard, { backgroundColor: 'rgba(151,168,135,0.10)' }]}>
                 <Body style={styles.miniLabel}>Open / closed</Body>
                 <View style={styles.miniRow}>
-                  <Serif style={[styles.miniNum, { color: colors.sage }]}>5</Serif>
+                  <Serif style={[styles.miniNum, { color: colors.sage }]}>{openQuestions}</Serif>
                   <Body style={styles.miniUnit}>open</Body>
                   <Body style={styles.miniDotSep}>·</Body>
-                  <Serif style={[styles.miniNum, { color: colors.ink2 }]}>3</Serif>
+                  <Serif style={[styles.miniNum, { color: colors.ink2 }]}>{closedQuestions}</Serif>
                   <Body style={styles.miniUnit}>closed</Body>
                 </View>
                 <View style={styles.miniBar}>
-                  <View style={{ width: '62.5%', backgroundColor: colors.sage }} />
+                  <View style={{ width: `${questions ? (openQuestions / questions) * 100 : 0}%`, backgroundColor: colors.sage }} />
                   <View style={{ flex: 1, backgroundColor: 'rgba(151,168,135,0.25)' }} />
                 </View>
               </View>
               <View style={[styles.miniCard, { backgroundColor: 'rgba(208,136,102,0.08)' }]}>
-                <Body style={styles.miniLabel}>Vs your average</Body>
+                <Body style={styles.miniLabel}>Conversation rate</Body>
                 <View style={styles.miniRow}>
-                  <Serif style={[styles.miniNum, { color: colors.sage }]}>↑ 2.8</Serif>
-                  <Body style={styles.miniUnit}>vs 5.2 / conv</Body>
+                  <Serif style={[styles.miniNum, { color: colors.sage }]}>{(questions / Math.max(durationMin, 1)).toFixed(1)}</Serif>
+                  <Body style={styles.miniUnit}>questions / min</Body>
                 </View>
-                <SerifItalic style={styles.miniItalic}>Your most curious chat in two weeks.</SerifItalic>
+                <SerifItalic style={styles.miniItalic}>Based on this debrief's transcript.</SerifItalic>
               </View>
             </View>
           </View>

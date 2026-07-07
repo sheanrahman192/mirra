@@ -7,12 +7,14 @@ import {
   KeyboardAvoidingView, Platform, Animated, Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { Body, Serif, SerifItalic, Eyebrow } from '@/components/Typography';
 import { Icon } from '@/components/Icon';
 import { colors, fonts } from '@/theme/tokens';
 import { SEED_MESSAGES, STARTER_PROMPTS, CANNED_REPLIES, ChatMessage } from '@/data/reflect';
+import { sendReflection } from '@/api/client';
+import { useAuth } from '@/auth/AuthContext';
 
 function ChatBubble({ from, text }: ChatMessage) {
   const isYou = from === 'you';
@@ -73,6 +75,8 @@ function ContextPill({ subject }: { subject: string }) {
 export function ReflectScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { accessToken } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>(SEED_MESSAGES);
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState(false);
@@ -83,18 +87,31 @@ export function ReflectScreen() {
     scrollerRef.current?.scrollToEnd({ animated: true });
   }, [messages, thinking]);
 
-  const send = (text?: string) => {
+  const send = async (text?: string) => {
     const msg = (text ?? input).trim();
     if (!msg || thinking) return;
     setInput('');
-    setMessages((m) => [...m, { from: 'you', text: msg }]);
+    const nextMessages = [...messages, { from: 'you' as const, text: msg }];
+    setMessages(nextMessages);
     setThinking(true);
-    setTimeout(() => {
+    try {
+      if (!accessToken) throw new Error('Missing access token');
+      const reply = await sendReflection(accessToken, {
+        conversationId: id,
+        prompt: msg,
+        messages: messages.map((message) => ({
+          role: message.from === 'ai' ? 'assistant' : 'user',
+          content: message.text,
+        })),
+      });
+      setMessages((m) => [...m, { from: 'ai', text: reply }]);
+    } catch {
       const reply = CANNED_REPLIES[replyIdx.current % CANNED_REPLIES.length];
       replyIdx.current += 1;
       setMessages((m) => [...m, { from: 'ai', text: reply }]);
+    } finally {
       setThinking(false);
-    }, 1100);
+    }
   };
 
   const canSend = !!input.trim() && !thinking;

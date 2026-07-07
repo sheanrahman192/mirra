@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ConversationStats(BaseModel):
@@ -11,6 +12,7 @@ class ConversationStats(BaseModel):
     session_duration_minutes: float
     user_speech_duration_minutes: float
     estimated_wpm: float
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class Debrief(BaseModel):

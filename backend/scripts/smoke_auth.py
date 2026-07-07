@@ -11,13 +11,21 @@ import urllib.request
 BASE_URL = os.environ.get("MIRRA_BACKEND_URL", "http://localhost:8000").rstrip("/")
 
 
-def request(path: str, method: str = "GET", body: dict | None = None) -> tuple[int, dict]:
+def request(
+    path: str,
+    method: str = "GET",
+    body: dict | None = None,
+    headers: dict | None = None,
+) -> tuple[int, dict]:
     data = json.dumps(body).encode("utf-8") if body is not None else None
+    req_headers = dict(headers or {})
+    if body is not None:
+        req_headers["Content-Type"] = "application/json"
     req = urllib.request.Request(
         f"{BASE_URL}{path}",
         data=data,
         method=method,
-        headers={"Content-Type": "application/json"} if body is not None else {},
+        headers=req_headers,
     )
     try:
         with urllib.request.urlopen(req, timeout=20) as res:
@@ -60,6 +68,27 @@ def main() -> int:
     )
     print("username_sign_in", signin_code, {"has_access_token": bool(signin.get("access_token"))})
     if signin_code != 200 or not signin.get("access_token"):
+        return 1
+
+    auth_headers = {"Authorization": f"Bearer {signin['access_token']}"}
+    profile_code, profile = request("/profile/summary", headers=auth_headers)
+    print("profile_summary", profile_code, {"total_conversations": profile.get("total_conversations")})
+    if profile_code != 200:
+        return 1
+
+    progress_code, progress = request("/analytics/progress?weeks=1", headers=auth_headers)
+    print("progress_summary", progress_code, {"weeks": len(progress.get("weeks", []))})
+    if progress_code != 200 or not progress.get("weeks"):
+        return 1
+
+    reflect_code, reflect = request(
+        "/reflect",
+        "POST",
+        {"prompt": "What should I notice?", "messages": []},
+        auth_headers,
+    )
+    print("reflect", reflect_code, {"has_reply": bool(reflect.get("reply"))})
+    if reflect_code != 200 or not reflect.get("reply"):
         return 1
 
     if not status.get("google_enabled"):

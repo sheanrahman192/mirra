@@ -1,5 +1,5 @@
 // Progress · this week — weekly trends, swipeable weeks, what's working / nudges.
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Screen } from '@/components/Screen';
@@ -12,6 +12,9 @@ import { Donut, RingMeter, WeeklyBars, PairedBarChart, TurnOffsetChart, LSMHisto
 import { FillerBars, OffsetZoneLegend } from '@/components/meters';
 import { colors, fonts } from '@/theme/tokens';
 import { WEEKS, DAY_LABELS, Week } from '@/data/weeks';
+import { useProgressSummary } from '@/hooks/useProgressSummary';
+import { ProgressWeekSummary } from '@/models/debrief';
+import { formatConversationWhen, formatDuration } from '@/utils/timeFormat';
 
 const WEEKLY_INTRO = "Five longer conversations this week. Questions up 22%, interruptions down to 2.2 per call — and your words opened up. You're finding a rhythm.";
 
@@ -32,11 +35,81 @@ function makeDeltas(w: Week, prevW: Week | null) {
   return { mk };
 }
 
+function totalMinutesLabel(minutes: number) {
+  const rounded = Math.round(minutes);
+  const hours = Math.floor(rounded / 60);
+  const mins = rounded % 60;
+  return hours > 0 ? `${hours} hour${hours === 1 ? '' : 's'}, ${mins} minutes.` : `${mins} minutes.`;
+}
+
+function toWeek(summary: ProgressWeekSummary): Week {
+  const totalQuestions = summary.totalQuestions;
+  const closed = Math.round(totalQuestions * 0.35);
+  const open = Math.max(0, totalQuestions - closed);
+  const receivedDaily = summary.dailyQuestions.map((value) => Math.round(value * 0.7));
+  const uniqueWords = Math.max(0, Math.round(summary.averageWpm * summary.totalMinutes * 0.45));
+  const totalWords = Math.max(uniqueWords, Math.round(summary.averageWpm * summary.totalMinutes));
+
+  return {
+    label: summary.label,
+    short: summary.label === 'This week' ? 'This week' : summary.label.split(' - ')[0],
+    upcoming: summary.conversationCount === 0,
+    title: [
+      `${summary.conversationCount} ${summary.conversationCount === 1 ? 'conversation' : 'conversations'},`,
+      totalMinutesLabel(summary.totalMinutes),
+    ],
+    convs: summary.conversationCount,
+    mins: `${Math.floor(summary.totalMinutes / 60)}:${String(Math.round(summary.totalMinutes % 60)).padStart(2, '0')}`,
+    daily: summary.dailyMinutes.map((value) => Math.round(value)),
+    talkListen: summary.talkListenPercent,
+    talkTrend: [summary.talkListenPercent],
+    questions: summary.averageQuestions,
+    questionsTrend: [summary.averageQuestions],
+    questionsDaily: { asked: summary.dailyQuestions, received: receivedDaily },
+    questionsOpenClosed: {
+      asked: { open, closed },
+      received: { open: Math.round(open * 0.7), closed: Math.round(closed * 0.7) },
+    },
+    interrupts: summary.interruptionCount,
+    interruptsTrend: [summary.interruptionCount],
+    turnOffsetAvg: summary.interruptionCount > summary.conversationCount ? 160 : 220,
+    turnOffsetTrend: DAY_LABELS.map((label, index) => ({
+      t: label,
+      ms: summary.dailyMinutes[index] > 0 ? (summary.dailyInterruptions[index] > 0 ? 160 : 220) : null,
+    })),
+    energy: 0,
+    energyAxes: [0, 0, 0, 0, 0],
+    lsmAvg: 0,
+    ttrAvg: totalWords > 0 ? uniqueWords / totalWords : 0,
+    ttrCounts: { unique: uniqueWords, total: totalWords },
+    topFillers: summary.topFillers,
+    lsmConvs: summary.conversations.map((conversation) => ({ name: conversation.title, score: 0 })),
+    convsList: summary.conversations.map((conversation) => ({
+      id: conversation.id,
+      title: conversation.title,
+      when: formatConversationWhen(conversation.createdAt),
+      duration: formatDuration(Math.round(conversation.durationMinutes * 60)),
+      tone: conversation.tone,
+      note: conversation.note,
+    })),
+  };
+}
+
 export function ProgressScreen() {
   const router = useRouter();
   const [weekIdx, setWeekIdx] = useState(1);
-  const w = WEEKS[weekIdx];
-  const prevW = weekIdx > 0 ? WEEKS[weekIdx - 1] : null;
+  const { progress } = useProgressSummary();
+  const backendWeeks = useMemo(() => progress?.weeks.map(toWeek) ?? [], [progress]);
+  const weeks = backendWeeks.length > 0 ? backendWeeks : WEEKS;
+  const usingBackendWeeks = backendWeeks.length > 0;
+
+  useEffect(() => {
+    if (progress?.weeks.length) setWeekIdx(progress.currentWeekIndex);
+  }, [progress?.currentWeekIndex, progress?.weeks.length]);
+
+  const w = weeks[weekIdx] ?? weeks[0] ?? WEEKS[1];
+  const prevW = weekIdx > 0 ? weeks[weekIdx - 1] : null;
+  const backendWeek = usingBackendWeeks ? progress?.weeks[weekIdx] : null;
   const d = makeDeltas(w, prevW);
 
   const activeDays = w.daily.filter((m) => m > 0);
@@ -79,12 +152,23 @@ export function ProgressScreen() {
     w.ttrAvg < 0.62 && `Vocabulary stayed around ${Math.round(w.ttrAvg * 100)}% unique. Reaching for a fresher word now and then could open new ground.`,
   ].filter(Boolean).slice(0, 2) as string[];
 
+  const visibleWins = usingBackendWeeks
+    ? backendWeek?.wins.length
+      ? backendWeek.wins
+      : ['No conversation patterns yet. Import or record a conversation to start seeing strengths.']
+    : wins;
+  const visibleNudges = usingBackendWeeks
+    ? backendWeek?.nudges.length
+      ? backendWeek.nudges
+      : ['Nothing to nudge yet. A first debrief will give Mirra something real to reflect back.']
+    : nudges;
+
   const todayIdx = weekIdx === 0 ? null : 1;
 
   return (
     <Screen topOffset={50}>
       <View style={{ paddingTop: 4 }}>
-        <WeekPaginator weeks={WEEKS} idx={weekIdx} onChange={setWeekIdx} />
+        <WeekPaginator weeks={weeks} idx={weekIdx} onChange={setWeekIdx} />
       </View>
 
       {/* Title + intro */}
@@ -262,13 +346,13 @@ export function ProgressScreen() {
         <Card>
           <Eyebrow>What's working</Eyebrow>
           <View style={{ gap: 12, marginTop: 12 }}>
-            {wins.map((line, i) => <InsightLine key={i} accent={colors.sage}>{line}</InsightLine>)}
+            {visibleWins.map((line, i) => <InsightLine key={i} accent={colors.sage}>{line}</InsightLine>)}
           </View>
         </Card>
         <Card>
           <Eyebrow>Gentle nudges</Eyebrow>
           <View style={{ gap: 12, marginTop: 12 }}>
-            {nudges.map((line, i) => <InsightLine key={i} accent={colors.coral}>{line}</InsightLine>)}
+            {visibleNudges.map((line, i) => <InsightLine key={i} accent={colors.coral}>{line}</InsightLine>)}
           </View>
           <SerifItalic style={styles.nudgeClose}>Nothing urgent. Just things to notice — not to fix.</SerifItalic>
         </Card>
