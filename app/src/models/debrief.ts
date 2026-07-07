@@ -87,6 +87,19 @@ export interface ProfileSummary {
   resetsAt: string;
 }
 
+export interface BillingStatus {
+  plan: 'free' | 'pro';
+  status: string;
+  isPro: boolean;
+  freeConversationsRemaining: number;
+  currentPeriodEnd?: string | null;
+  trialEnd?: string | null;
+  cancelAtPeriodEnd: boolean;
+  stripeConfigured: boolean;
+  checkoutAvailable: boolean;
+  portalAvailable: boolean;
+}
+
 export interface ReflectMessage {
   role: 'assistant' | 'user';
   content: string;

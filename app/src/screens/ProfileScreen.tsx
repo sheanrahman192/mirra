@@ -9,6 +9,7 @@ import { Body, Serif, SerifItalic, Eyebrow } from '@/components/Typography';
 import { Icon } from '@/components/Icon';
 import { colors, fonts } from '@/theme/tokens';
 import { useAuth } from '@/auth/AuthContext';
+import { useBilling } from '@/hooks/useBilling';
 import { useProfileSummary } from '@/hooks/useProfileSummary';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { CoachingDepth, CoachingTone, UserSettings, WeeklySummaryDay, WeeklySummaryTime } from '@/models/debrief';
@@ -209,6 +210,13 @@ function privacyHint(settings: UserSettings) {
   return settings.includeTranscriptInReflect ? 'Transcripts saved · Reflect can use excerpts' : 'Transcripts saved · Reflect uses summaries';
 }
 
+function shortBillingDate(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 function SettingsSheet({
   panel,
   settings,
@@ -346,6 +354,7 @@ export function ProfileScreen() {
   const { user, accessToken, signOut } = useAuth();
   const { summary } = useProfileSummary();
   const { settings, loading: settingsLoading, saving: settingsSaving, error: settingsError, updateSettings } = useUserSettings(accessToken);
+  const { billing, loading: billingLoading, opening: billingOpening, error: billingError, startCheckout, openPortal } = useBilling(accessToken);
   const [activePanel, setActivePanel] = useState<SettingsPanelId | null>(null);
   const username = typeof user?.user_metadata?.username === 'string' ? user.user_metadata.username : null;
   const label = username ? `@${username}` : user?.email ?? 'signed in';
@@ -355,6 +364,25 @@ export function ProfileScreen() {
     : 'Now';
   const used = summary?.usedThisMonth ?? 0;
   const remaining = summary?.remaining ?? 5;
+  const isPro = billing?.isPro ?? false;
+  const freeRemaining = billing?.freeConversationsRemaining ?? remaining;
+  const trialEnd = shortBillingDate(billing?.trialEnd);
+  const periodEnd = shortBillingDate(billing?.currentPeriodEnd);
+  const planDescription = isPro
+    ? billing?.status === 'trialing' && trialEnd
+      ? `Trial ends ${trialEnd} · unlimited conversations`
+      : billing?.cancelAtPeriodEnd && periodEnd
+        ? `Active until ${periodEnd} · unlimited conversations`
+        : 'Unlimited conversations · full history · Pro metrics'
+    : `${freeRemaining} conversations remaining this month · 7-day history · core metrics`;
+  const billingNote = billingError ?? (isPro ? 'Manage billing, invoices, and cancellation in Stripe' : 'Cancel anytime · No charge until day 15');
+  const billingCta = billingOpening ? 'Opening…' : isPro ? 'Manage plan' : 'Try Pro free for 14 days';
+  const handleBillingPress = async () => {
+    const url = isPro ? await openPortal() : await startCheckout();
+    if (url) {
+      void Linking.openURL(url);
+    }
+  };
 
   return (
     <Screen topOffset={50}>
@@ -391,8 +419,10 @@ export function ProfileScreen() {
           </Svg>
 
           <Body style={styles.subEyebrow}>Current plan</Body>
-          <Serif style={styles.subPlan}>Mirra <SerifItalic style={styles.subPlan}>Free</SerifItalic></Serif>
-          <Body style={styles.subDesc}>{remaining} conversations remaining this month · 7-day history · core metrics</Body>
+          <Serif style={styles.subPlan}>
+            Mirra <SerifItalic style={styles.subPlan}>{isPro ? 'Pro' : 'Free'}</SerifItalic>
+          </Serif>
+          <Body style={styles.subDesc}>{billingLoading ? 'Checking plan…' : planDescription}</Body>
 
           <View style={styles.subDivider} />
 
@@ -416,10 +446,14 @@ export function ProfileScreen() {
             ))}
           </View>
 
-          <View style={styles.tryBtn}>
-            <Body style={styles.tryBtnText}>Try Pro free for 14 days</Body>
-          </View>
-          <Body style={styles.tryNote}>Cancel anytime · No charge until day 15</Body>
+          <Pressable
+            onPress={handleBillingPress}
+            disabled={billingOpening}
+            style={({ pressed }) => [styles.tryBtn, pressed && styles.tryBtnPressed, billingOpening && styles.tryBtnDisabled]}
+          >
+            {billingOpening ? <ActivityIndicator size="small" color="#2A2520" /> : <Body style={styles.tryBtnText}>{billingCta}</Body>}
+          </Pressable>
+          <Body style={[styles.tryNote, billingError && styles.tryNoteError]}>{billingNote}</Body>
         </LinearGradient>
       </View>
 
@@ -482,8 +516,11 @@ const styles = StyleSheet.create({
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   featureText: { fontSize: 13, color: 'rgba(246,239,224,0.92)' },
   tryBtn: { marginTop: 18, paddingVertical: 14, borderRadius: 14, backgroundColor: '#F6EFE0', alignItems: 'center' },
+  tryBtnPressed: { opacity: 0.82 },
+  tryBtnDisabled: { opacity: 0.72 },
   tryBtnText: { color: '#2A2520', fontFamily: fonts.bodySemibold, fontSize: 14, letterSpacing: 0.3 },
   tryNote: { fontSize: 10.5, color: 'rgba(246,239,224,0.5)', marginTop: 10, textAlign: 'center', letterSpacing: 0.4 },
+  tryNoteError: { color: colors.terracottaSoft, opacity: 1 },
 
   settingsWrap: { paddingHorizontal: 22, paddingTop: 20 },
   settingsCard: { paddingVertical: 4, paddingHorizontal: 16 },

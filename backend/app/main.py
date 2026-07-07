@@ -1,16 +1,24 @@
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from jose import JWTError, jwt
 from supabase import Client
 
 from app.auth import verify_token
+from app.billing import (
+    create_checkout_session,
+    create_portal_session,
+    fetch_billing_status,
+    handle_stripe_webhook,
+    user_has_pro_access,
+)
 from app.config import settings
 from app.dashboard import build_profile_summary, build_progress, fallback_reflection
 from app.db import get_db
 from app.models.auth import UsernameAuthRequest, UsernameAuthResponse
+from app.models.billing import BillingSessionResponse, BillingStatus, StripeWebhookResponse
 from app.models.dashboard import ProfileSummary, ProgressResponse, ReflectRequest, ReflectResponse
 from app.models.debrief import Debrief, SessionResponse
 from app.models.settings import UserSettings, UserSettingsUpdate
@@ -197,6 +205,31 @@ def update_settings(
     return save_user_settings(db, user_id, payload)
 
 
+@app.get("/billing/status", response_model=BillingStatus)
+def billing_status(user_id: str = Depends(verify_token), db: Client = Depends(get_db)):
+    return fetch_billing_status(db, user_id)
+
+
+@app.post("/billing/checkout", response_model=BillingSessionResponse)
+def billing_checkout(user_id: str = Depends(verify_token), db: Client = Depends(get_db)):
+    return create_checkout_session(db, user_id)
+
+
+@app.post("/billing/portal", response_model=BillingSessionResponse)
+def billing_portal(user_id: str = Depends(verify_token), db: Client = Depends(get_db)):
+    return create_portal_session(db, user_id)
+
+
+@app.post("/billing/webhook", response_model=StripeWebhookResponse)
+async def stripe_webhook(
+    request: Request,
+    stripe_signature: str | None = Header(None),
+    db: Client = Depends(get_db),
+):
+    payload = await request.body()
+    return handle_stripe_webhook(db, payload, stripe_signature)
+
+
 @app.get("/analytics/progress", response_model=ProgressResponse)
 def progress_summary(
     weeks: int = Query(8, ge=1, le=26),
@@ -223,8 +256,9 @@ def create_session(
     if len(audio_bytes) > MAX_AUDIO_BYTES:
         raise HTTPException(status_code=413, detail="Audio file is too large")
 
-    # ponytail: charged on attempt not success; race window OK at 5/month cap
-    check_and_increment(db, user_id)
+    if not user_has_pro_access(db, user_id):
+        # ponytail: charged on attempt not success; race window OK at 5/month cap
+        check_and_increment(db, user_id)
     user_settings = fetch_user_settings(db, user_id)
     result = coordinator.run(audio_bytes)
     session_id = str(uuid4())

@@ -1,5 +1,6 @@
 import { env } from '@/config/env';
 import {
+  BillingStatus,
   ConversationSummary,
   DebriefCard,
   FillerCount,
@@ -105,6 +106,19 @@ type RawUserSettings = {
   include_transcript_in_reflect: boolean;
   coaching_tone: UserSettings['coachingTone'];
   coaching_depth: UserSettings['coachingDepth'];
+};
+
+type RawBillingStatus = {
+  plan: BillingStatus['plan'];
+  status: string;
+  is_pro: boolean;
+  free_conversations_remaining: number;
+  current_period_end?: string | null;
+  trial_end?: string | null;
+  cancel_at_period_end: boolean;
+  stripe_configured: boolean;
+  checkout_available: boolean;
+  portal_available: boolean;
 };
 
 function endpoint(path: string) {
@@ -231,6 +245,21 @@ function toUserSettings(raw: RawUserSettings): UserSettings {
   };
 }
 
+function toBillingStatus(raw: RawBillingStatus): BillingStatus {
+  return {
+    plan: raw.plan,
+    status: raw.status,
+    isPro: raw.is_pro,
+    freeConversationsRemaining: raw.free_conversations_remaining,
+    currentPeriodEnd: raw.current_period_end,
+    trialEnd: raw.trial_end,
+    cancelAtPeriodEnd: raw.cancel_at_period_end,
+    stripeConfigured: raw.stripe_configured,
+    checkoutAvailable: raw.checkout_available,
+    portalAvailable: raw.portal_available,
+  };
+}
+
 function toRawUserSettingsPatch(patch: Partial<UserSettings>): Partial<RawUserSettings> {
   const raw: Partial<RawUserSettings> = {};
   if (patch.notificationsEnabled !== undefined) raw.notifications_enabled = patch.notificationsEnabled;
@@ -285,6 +314,29 @@ export async function fetchUserSettings(token: string): Promise<UserSettings> {
     headers: { Authorization: `Bearer ${token}` },
   }).then((r) => parseResponse<RawUserSettings>(r));
   return toUserSettings(raw);
+}
+
+export async function fetchBillingStatus(token: string): Promise<BillingStatus> {
+  const raw = await fetch(endpoint('/billing/status'), {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then((r) => parseResponse<RawBillingStatus>(r));
+  return toBillingStatus(raw);
+}
+
+export async function createBillingCheckoutSession(token: string): Promise<string> {
+  const raw = await fetch(endpoint('/billing/checkout'), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  }).then((r) => parseResponse<{ url: string }>(r));
+  return raw.url;
+}
+
+export async function createBillingPortalSession(token: string): Promise<string> {
+  const raw = await fetch(endpoint('/billing/portal'), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  }).then((r) => parseResponse<{ url: string }>(r));
+  return raw.url;
 }
 
 export async function updateUserSettings(token: string, patch: Partial<UserSettings>): Promise<UserSettings> {
