@@ -134,6 +134,14 @@ export function ReflectScreen() {
     }
   };
 
+  const goBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
+  };
+
   const canSend = !!input.trim() && !thinking;
   const bottomPad = (Platform.OS === 'ios' ? 22 : 18) + insets.bottom;
 
@@ -144,7 +152,7 @@ export function ReflectScreen() {
     >
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
-        <Pressable onPress={() => router.back()} hitSlop={8}><Icon.back color={colors.muted} /></Pressable>
+        <Pressable onPress={goBack} hitSlop={8}><Icon.back color={colors.muted} /></Pressable>
         <View style={{ alignItems: 'center', gap: 2 }}>
           <Eyebrow>Reflect with</Eyebrow>
           <SerifItalic style={styles.headerName}>Mirra</SerifItalic>
