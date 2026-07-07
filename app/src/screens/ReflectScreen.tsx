@@ -1,6 +1,4 @@
 // Reflect · AI chat — reflect on a conversation with Mirra.
-// The prototype called window.claude.complete(); here we cycle warm canned
-// replies with a short "thinking" delay to keep the screen self-contained.
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, ScrollView, TextInput, Pressable, StyleSheet,
@@ -13,8 +11,9 @@ import { Body, Serif, SerifItalic, Eyebrow } from '@/components/Typography';
 import { Icon } from '@/components/Icon';
 import { colors, fonts } from '@/theme/tokens';
 import { SEED_MESSAGES, STARTER_PROMPTS, CANNED_REPLIES, ChatMessage } from '@/data/reflect';
-import { sendReflection } from '@/api/client';
+import { fetchDebrief, sendReflection } from '@/api/client';
 import { useAuth } from '@/auth/AuthContext';
+import { titleForDebrief } from '@/hooks/useDebriefs';
 
 function ChatBubble({ from, text }: ChatMessage) {
   const isYou = from === 'you';
@@ -79,6 +78,7 @@ export function ReflectScreen() {
   const { accessToken } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>(SEED_MESSAGES);
   const [input, setInput] = useState('');
+  const [subject, setSubject] = useState('recent conversation');
   const [thinking, setThinking] = useState(false);
   const replyIdx = useRef(0);
   const scrollerRef = useRef<ScrollView>(null);
@@ -86,6 +86,26 @@ export function ReflectScreen() {
   useEffect(() => {
     scrollerRef.current?.scrollToEnd({ animated: true });
   }, [messages, thinking]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!id || !accessToken) {
+      setSubject('recent conversation');
+      return;
+    }
+
+    fetchDebrief(accessToken, id)
+      .then((debrief) => {
+        if (mounted) setSubject(titleForDebrief(debrief));
+      })
+      .catch(() => {
+        if (mounted) setSubject('recent conversation');
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [accessToken, id]);
 
   const send = async (text?: string) => {
     const msg = (text ?? input).trim();
@@ -134,7 +154,7 @@ export function ReflectScreen() {
 
       {/* Messages */}
       <ScrollView ref={scrollerRef} style={{ flex: 1 }} contentContainerStyle={styles.messages} showsVerticalScrollIndicator={false}>
-        <ContextPill subject="Coffee with Maya · Tuesday" />
+        <ContextPill subject={subject} />
         {messages.map((m, i) => <ChatBubble key={i} from={m.from} text={m.text} />)}
         {thinking && <TypingIndicator />}
       </ScrollView>

@@ -6,9 +6,7 @@ export interface ChatMessage {
 }
 
 export const SEED_MESSAGES: ChatMessage[] = [
-  { from: 'ai', text: "I read through your coffee with Maya. There's something quiet in there — you held more space than usual, but the first ten minutes had a different rhythm than the rest. Want to start there?" },
-  { from: 'you', text: 'Yeah — I noticed I interrupted her three times early on.' },
-  { from: 'ai', text: 'Right. All in the first ten minutes, then none for the next eighteen. What do you think shifted? Was it her, you, or the topic?' },
+  { from: 'ai', text: 'I can help you reflect on a saved conversation or on a moment you remember. What would you like to look at first?' },
 ];
 
 export const STARTER_PROMPTS: string[] = [
@@ -18,22 +16,10 @@ export const STARTER_PROMPTS: string[] = [
   'Compare to last week',
 ];
 
-// Canned reflective replies — stand in for the live Claude call the prototype
-// made via window.claude.complete(). Cycled through on each user message.
+// Local fallback replies used only if the backend reflection call fails.
 export const CANNED_REPLIES: string[] = [
-  "That tracks with the data — your interruptions clustered before minute ten, then disappeared. Often that early friction is just two people finding a shared tempo. What were you feeling in those first few minutes?",
-  "It's worth noticing without judging it. You asked eight questions overall, most in the back half — once you settled, you got genuinely curious. Does that match how it felt from the inside?",
-  "A small experiment for next time: when you feel the urge to jump in, try a single breath first. You already do this well later in conversations. What would make it easier to start there?",
-  "Compared to last week you're trending gentler — interruptions down to 2.2 per conversation and questions up 22%. The shape of your conversations is changing. What do you think is driving it?",
+  'That is worth noticing without judging it. What was happening right before that moment?',
+  'A small experiment for next time: when you feel the urge to jump in, try a single breath first. What would make that easier?',
+  'I would look for the moment where the conversation changed pace. Did it feel like the topic shifted, or did your attention shift?',
+  'There may be a pattern here, but it needs one concrete moment to become useful. Which part of the conversation keeps replaying for you?',
 ];
-
-export const CONV_FACTS = `You are Mirra — a warm, reflective conversation coach. Be kind, curious, non-judgmental. Keep responses 1–3 sentences and end with an open question when natural.
-
-This is a chat with Maya, recorded yesterday at 4:12 PM, 28 minutes long:
-- Talk/Listen: user spoke 62%, Maya 38%.
-- 8 questions asked, mostly in the second half.
-- 3 interruptions in the first 10 minutes, none after.
-- Energy mirroring: 78% in tune. Strongest in minutes 15–22.
-- Vocabulary: 236 unique words, leaned on "space", "curious", "tell me".
-
-This week (May 19-25): 5 conversations, 2h 14m total. Trends: questions up 22% vs prior weeks, interruptions down to 2.2 per conversation.`;

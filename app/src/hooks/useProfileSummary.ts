@@ -10,7 +10,12 @@ export function useProfileSummary() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!accessToken) return;
+    if (!accessToken) {
+      setSummary(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {

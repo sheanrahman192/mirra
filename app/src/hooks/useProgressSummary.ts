@@ -10,7 +10,12 @@ export function useProgressSummary() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!accessToken) return;
+    if (!accessToken) {
+      setProgress(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {

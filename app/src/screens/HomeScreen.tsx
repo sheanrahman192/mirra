@@ -7,12 +7,17 @@ import { Screen } from '@/components/Screen';
 import { Body, Serif, SerifItalic, Eyebrow } from '@/components/Typography';
 import { Icon } from '@/components/Icon';
 import { colors, fonts } from '@/theme/tokens';
-import { RECENTS, Recent } from '@/data/recents';
 import { ConversationListItem } from '@/models/conversation';
+import { useAuth } from '@/auth/AuthContext';
 import { useDebriefs } from '@/hooks/useDebriefs';
 import { useImportAudio } from '@/hooks/useImportAudio';
+import { useRecordAudio } from '@/hooks/useRecordAudio';
 
-const HOME_GREET = "Twelve questions yesterday — your highest this week. Something's clicking.";
+function displayName(email?: string | null, username?: unknown) {
+  if (typeof username === 'string' && username.trim()) return username.trim();
+  if (email) return email.split('@')[0] || 'there';
+  return 'there';
+}
 
 function BreathingRing({ inset, delay }: { inset: number; delay: number }) {
   const v = useRef(new Animated.Value(0)).current;
@@ -37,12 +42,28 @@ function BreathingRing({ inset, delay }: { inset: number; delay: number }) {
   );
 }
 
-function RecordButton({ size = 172 }: { size?: number }) {
+function RecordButton({
+  size = 172,
+  recording,
+  loading,
+  onPress,
+}: {
+  size?: number;
+  recording: boolean;
+  loading: boolean;
+  onPress: () => void;
+}) {
   return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+    <Pressable
+      onPress={onPress}
+      disabled={loading}
+      style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}
+      accessibilityRole="button"
+      accessibilityLabel={recording ? 'Stop recording' : 'Start recording'}
+    >
       <BreathingRing inset={-28} delay={0} />
       <BreathingRing inset={-14} delay={600} />
-      <View style={[styles.recordBtn, { width: size, height: size, borderRadius: size / 2 }]}>
+      <View style={[styles.recordBtn, recording && styles.recordBtnActive, loading && styles.recordBtnDisabled, { width: size, height: size, borderRadius: size / 2 }]}>
         <Svg width={size} height={size} style={{ position: 'absolute' }}>
           <Defs>
             <RadialGradient id="rec" cx="35%" cy="30%" r="75%">
@@ -53,17 +74,23 @@ function RecordButton({ size = 172 }: { size?: number }) {
           </Defs>
           <Circle cx={size / 2} cy={size / 2} r={size / 2} fill="url(#rec)" />
         </Svg>
-        <Svg viewBox="0 0 24 24" width={48} height={48} style={styles.micIcon}>
-          <Rect x={9} y={3} width={6} height={12} rx={3} fill="#fff" />
-          <Path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="#fff" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" />
-          <Path d="M12 18v3" fill="none" stroke="#fff" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" />
-        </Svg>
+        {loading ? (
+          <ActivityIndicator size="large" color="#fff" style={styles.micIcon} />
+        ) : recording ? (
+          <View style={styles.stopIcon} />
+        ) : (
+          <Svg viewBox="0 0 24 24" width={48} height={48} style={styles.micIcon}>
+            <Rect x={9} y={3} width={6} height={12} rx={3} fill="#fff" />
+            <Path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="#fff" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" />
+            <Path d="M12 18v3" fill="none" stroke="#fff" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        )}
       </View>
-    </View>
+    </Pressable>
   );
 }
 
-function RecentRow({ item, isLast, onPress }: { item: ConversationListItem | Recent; isLast: boolean; onPress: () => void }) {
+function RecentRow({ item, isLast, onPress }: { item: ConversationListItem; isLast: boolean; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={[styles.recentRow, !isLast && styles.rowBorder]}>
       <View style={[styles.dot, { backgroundColor: colors[item.tone as keyof typeof colors] ?? colors.sage }]} />
@@ -78,13 +105,13 @@ function RecentRow({ item, isLast, onPress }: { item: ConversationListItem | Rec
   );
 }
 
-function ImportButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
+function ImportButton({ onPress, loading, disabled }: { onPress: () => void; loading: boolean; disabled?: boolean }) {
   return (
     <Pressable
-      style={[styles.importBtn, loading && styles.importBtnDisabled]}
+      style={[styles.importBtn, (loading || disabled) && styles.importBtnDisabled]}
       hitSlop={8}
       onPress={onPress}
-      disabled={loading}
+      disabled={loading || disabled}
       accessibilityLabel="Import audio recording"
     >
       {loading ? (
@@ -102,35 +129,51 @@ function ImportButton({ onPress, loading }: { onPress: () => void; loading: bool
 
 export function HomeScreen() {
   const router = useRouter();
-  const { listItems, setDebriefs } = useDebriefs();
+  const { user } = useAuth();
+  const { listItems, loading, error, setDebriefs } = useDebriefs();
   const { importAudio, importing } = useImportAudio();
-
-  const recents: (ConversationListItem | Recent)[] =
-    listItems.length > 0 ? listItems : RECENTS;
+  const { isRecording, isUploadingRecording, recordingSeconds, toggleRecording } = useRecordAudio();
+  const busy = importing || isRecording || isUploadingRecording;
+  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+  const name = displayName(user?.email, user?.user_metadata?.username);
+  const heroHint = isUploadingRecording
+    ? 'Analyzing recording...'
+    : isRecording
+      ? `Recording ${Math.floor(recordingSeconds / 60)}:${String(Math.floor(recordingSeconds % 60)).padStart(2, '0')} - tap to finish`
+      : 'Tap to start - tap again to end';
+  const greeting = listItems.length > 0
+    ? `${listItems.length} real ${listItems.length === 1 ? 'conversation' : 'conversations'} ready for reflection.`
+    : 'Record or import a conversation to get your first debrief.';
 
   async function handleImport() {
     const debrief = await importAudio();
     if (debrief) setDebriefs((items) => [debrief, ...items.filter((item) => item.id !== debrief.id)]);
   }
+
+  async function handleRecord() {
+    const debrief = await toggleRecording();
+    if (debrief) setDebriefs((items) => [debrief, ...items.filter((item) => item.id !== debrief.id)]);
+  }
+
   return (
     <Screen topOffset={56}>
       {/* Header */}
       <View style={styles.header}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Eyebrow>Tuesday · May 23</Eyebrow>
+          <Eyebrow>{today}</Eyebrow>
           <Serif style={styles.greetingTitle}>
             Good evening,{'\n'}
-            <SerifItalic style={styles.greetingTitle}>Maya.</SerifItalic>
+            <SerifItalic style={styles.greetingTitle}>{name}.</SerifItalic>
           </Serif>
         </View>
-        <ImportButton onPress={handleImport} loading={importing} />
+        <ImportButton onPress={handleImport} loading={importing} disabled={busy && !importing} />
       </View>
-      <Body style={styles.greet}>{HOME_GREET}</Body>
+      <Body style={styles.greet}>{greeting}</Body>
 
       {/* Record hero */}
       <View style={styles.hero}>
-        <RecordButton size={172} />
-        <Body style={styles.heroHint}>Tap to start · tap again to end</Body>
+        <RecordButton size={172} recording={isRecording} loading={isUploadingRecording} onPress={handleRecord} />
+        <Body style={styles.heroHint}>{heroHint}</Body>
       </View>
 
       {/* Recent */}
@@ -138,18 +181,22 @@ export function HomeScreen() {
         <View style={styles.recentHead}>
           <Eyebrow>Recent conversations</Eyebrow>
           <Body style={styles.recentCount}>
-            {listItems.length > 0 ? `${listItems.length} imported` : '5 this week'}
+            {loading ? 'Loading' : `${listItems.length} saved`}
           </Body>
         </View>
         <View style={{ marginTop: 6 }}>
-          {recents.map((r, i) => (
+          {listItems.map((r, i) => (
             <RecentRow
               key={String(r.id)}
               item={r}
-              isLast={i === recents.length - 1}
+              isLast={i === listItems.length - 1}
               onPress={() => router.push({ pathname: '/conversation', params: { id: String(r.id) } })}
             />
           ))}
+          {!loading && !error && listItems.length === 0 && (
+            <SerifItalic style={styles.emptyRecent}>No conversations yet. Start a recording or import audio to create one.</SerifItalic>
+          )}
+          {error && <Body style={styles.errorText}>{error}</Body>}
         </View>
       </View>
     </Screen>
@@ -171,7 +218,10 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
     shadowColor: '#BA7253', shadowOffset: { width: 0, height: 14 }, shadowOpacity: 0.3, shadowRadius: 32, elevation: 12,
   },
+  recordBtnActive: { shadowOpacity: 0.42, transform: [{ scale: 0.98 }] },
+  recordBtnDisabled: { opacity: 0.72 },
   micIcon: { zIndex: 2, elevation: 2 },
+  stopIcon: { zIndex: 2, width: 42, height: 42, borderRadius: 12, backgroundColor: '#fff' },
   heroHint: { fontSize: 12.5, color: colors.muted, letterSpacing: 0.7, textTransform: 'uppercase', fontFamily: fonts.bodyMedium },
   recentSection: { paddingHorizontal: 24, paddingTop: 20 },
   recentHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 },
@@ -182,4 +232,6 @@ const styles = StyleSheet.create({
   recentTitle: { fontSize: 19, lineHeight: 21, color: colors.ink },
   recentMeta: { fontSize: 11.5, color: colors.muted, marginTop: 4, letterSpacing: 0.2 },
   recentNote: { fontSize: 13, color: colors.muted },
+  emptyRecent: { textAlign: 'center', paddingVertical: 34, color: colors.muted, fontSize: 13, lineHeight: 20 },
+  errorText: { textAlign: 'center', paddingVertical: 30, color: colors.coral, fontSize: 13, lineHeight: 19 },
 });

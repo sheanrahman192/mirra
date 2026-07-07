@@ -5,7 +5,11 @@ import { ConversationListItem } from '@/models/conversation';
 import { DebriefCard } from '@/models/debrief';
 import { formatConversationWhen, formatDuration } from '@/utils/timeFormat';
 
-function titleForDebrief(debrief: DebriefCard) {
+export function titleForDebrief(debrief: DebriefCard) {
+  const metadataTitle = debrief.stats.metadata.title;
+  if (typeof metadataTitle === 'string' && metadataTitle.trim()) {
+    return metadataTitle.trim();
+  }
   return debrief.observation.split(/[.!?]/)[0]?.trim() || 'Conversation debrief';
 }
 
@@ -35,7 +39,12 @@ export function useDebriefs() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!accessToken) return;
+    if (!accessToken) {
+      setDebriefs([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {

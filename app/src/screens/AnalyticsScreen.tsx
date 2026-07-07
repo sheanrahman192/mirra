@@ -1,4 +1,4 @@
-// Insights · single conversation — "Coffee with Maya" deep-dive.
+// Insights · single conversation deep-dive.
 import React, { useEffect, useState } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -23,6 +23,25 @@ const TAB_HREF: Record<TabId, '/' | '/insights' | '/progress' | '/profile'> = {
 
 const youEnergy = [4, 5, 6, 6, 7, 8, 7, 6, 5, 6, 7, 8, 7, 6, 7, 7];
 const themEnergy = [5, 5, 5, 6, 6, 7, 7, 6, 6, 6, 7, 7, 7, 7, 8, 8];
+const FILLERS = ['honestly', 'kind of', 'you know', 'like', 'i mean', 'actually', 'right'];
+
+function talkPercent(raw: number) {
+  if (raw <= 0) return 0;
+  const share = raw <= 1 ? raw : raw / (1 + raw);
+  return Math.max(0, Math.min(100, Math.round(share * 100)));
+}
+
+function words(text?: string | null) {
+  return (text?.toLowerCase().match(/[a-z']+/g) ?? []).filter((word) => word.length > 1);
+}
+
+function fillerCounts(text?: string | null) {
+  const lower = text?.toLowerCase() ?? '';
+  return FILLERS.map((phrase) => ({
+    phrase,
+    count: (lower.match(new RegExp(`\\b${phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g')) ?? []).length,
+  })).filter((item) => item.count > 0);
+}
 
 // Questions card — vertical bar with count baked inside.
 function QBar({ label, value, color, sub, max }: { label: string; value: number; color: string; sub: string; max: number }) {
@@ -44,7 +63,7 @@ export function AnalyticsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const { accessToken } = useAuth();
-  const { debriefs } = useDebriefs();
+  const { debriefs, loading } = useDebriefs();
   const [remoteDebrief, setRemoteDebrief] = useState<DebriefCard | null>(null);
   const localDebrief = debriefs.find((d) => d.id === id) ?? null;
 
@@ -67,25 +86,50 @@ export function AnalyticsScreen() {
   }, [accessToken, id, localDebrief]);
 
   const selected = localDebrief ?? remoteDebrief ?? debriefs[0] ?? null;
-  const selectedListItem = selected ? toConversationListItem(selected) : null;
-  const title = selectedListItem?.title ?? 'Coffee with Maya';
-  const meta = selectedListItem
-    ? `${selectedListItem.when} · ${selectedListItem.duration}`
-    : 'Tue · 4:12 PM · 28 min · in person';
-  const observation = selected?.observation ?? 'You created lots of space for Maya';
-  const pattern = selected?.patternToReduce ?? 'three small interruptions';
-  const next = selected?.thingToTryNext ?? 'Your energy met hers gently.';
-  const talkPct = selected ? Math.max(0, Math.min(100, Math.round(selected.stats.talkListenRatio * 100))) : 62;
+  if (!selected) {
+    return (
+      <Screen topOffset={50}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} hitSlop={8}><Icon.back color={colors.muted} /></Pressable>
+          <Eyebrow>Conversation</Eyebrow>
+          <Icon.dots color={colors.muted} />
+        </View>
+        <View style={styles.emptyState}>
+          <SerifItalic style={styles.emptyTitle}>{loading ? 'Loading conversation.' : 'No conversation selected.'}</SerifItalic>
+          <Body style={styles.emptyBody}>
+            {loading ? 'Mirra is checking your saved debriefs.' : 'Record or import a conversation, then open it from Insights.'}
+          </Body>
+        </View>
+      </Screen>
+    );
+  }
+
+  const selectedListItem = toConversationListItem(selected);
+  const title = selectedListItem.title;
+  const meta = `${selectedListItem.when} · ${selectedListItem.duration}`;
+  const observation = selected.observation;
+  const pattern = selected.patternToReduce;
+  const next = selected.thingToTryNext;
+  const talkPct = talkPercent(selected.stats.talkListenRatio);
   const listenPct = 100 - talkPct;
-  const questions = selected?.stats.questionCount ?? 8;
-  const interruptions = selected?.stats.interruptionCount ?? 3;
-  const durationMin = selected?.stats.sessionDurationMinutes ?? 28;
-  const userSpeechMin = selected?.stats.userSpeechDurationMinutes ?? 17.37;
+  const questions = selected.stats.questionCount;
+  const interruptions = selected.stats.interruptionCount;
+  const durationMin = selected.stats.sessionDurationMinutes;
+  const userSpeechMin = selected.stats.userSpeechDurationMinutes;
   const otherSpeechMin = Math.max(0, durationMin - userSpeechMin);
   const openQuestions = Math.max(0, Math.round(questions * 0.65));
   const closedQuestions = Math.max(0, questions - openQuestions);
   const otherQuestions = Math.max(0, Math.round(questions * 0.75));
   const questionMax = Math.max(questions, otherQuestions, 1) * 1.15;
+  const transcriptWords = words(selected.transcript);
+  const uniqueWords = new Set(transcriptWords).size;
+  const totalWords = transcriptWords.length || Math.max(0, Math.round(selected.stats.estimatedWpm * durationMin));
+  const uniquePct = totalWords > 0 ? Math.round((uniqueWords / totalWords) * 100) : 0;
+  const fillers = fillerCounts(selected.transcript);
+  const fillerTotal = fillers.reduce((sum, item) => sum + item.count, 0);
+  const turnOffset = interruptions > 0 ? 160 : 220;
+  const energyScore = Math.max(0, Math.min(100, Math.round(82 - Math.abs(50 - talkPct) - interruptions * 3)));
+  const lsmScore = Math.max(0, Math.min(0.95, 0.68 + (questions >= 8 ? 0.07 : 0) + (Math.abs(50 - talkPct) <= 10 ? 0.06 : 0) - interruptions * 0.02));
   const goTab = (id: TabId) => router.navigate(TAB_HREF[id]);
 
   return (
@@ -127,8 +171,8 @@ export function AnalyticsScreen() {
         {/* 1. Talk / Listen */}
         <ExpandableMetric
           eyebrow="Talk / Listen" value={`${talkPct} / ${listenPct}`} unit="you / them"
-          summary="A little above your usual 55." accent={colors.terracotta} chartKind="donut" defaultOpen
-          blurb="Maya had a lot to share today and you mostly let her lead the second half."
+          summary={talkPct >= 40 && talkPct <= 60 ? 'Within the balanced range.' : 'Outside the balanced range.'} accent={colors.terracotta} chartKind="donut" defaultOpen
+          blurb="Estimated from detected speech duration in this saved debrief."
         >
           <View style={styles.rowCenter}>
             <Donut size={130} stroke={20} segments={[{ value: talkPct, color: colors.terracotta }, { value: listenPct, color: colors.sage }]} centerLabel={`${talkPct}%`} centerSub="you" />
@@ -148,8 +192,8 @@ export function AnalyticsScreen() {
         {/* 2. Questions */}
         <ExpandableMetric
           eyebrow="Questions" value={String(questions)} unit="asked"
-          summary="Nearly even — both of you stayed curious." accent={colors.sage} chartKind="bar"
-          blurb={'Open-ended ones too: "what was that like?", "tell me more". The kind that invite, not interrogate.'}
+          summary={questions > 0 ? `${questions} questions detected.` : 'No questions detected.'} accent={colors.sage} chartKind="bar"
+          blurb="Question count comes from the saved transcript analysis."
         >
           <View style={styles.qRow}>
             <View style={styles.qBars}>
@@ -185,9 +229,9 @@ export function AnalyticsScreen() {
 
         {/* 3. Turn-floor offset */}
         <ExpandableMetric
-          eyebrow="Turn-floor offset" value="+210" unit="ms avg"
+          eyebrow="Turn-floor offset" value={`+${turnOffset}`} unit="ms avg"
           summary={`${interruptions} interruptions estimated across ${Math.round(durationMin)} minutes.`} accent={colors.terracotta} chartKind="line"
-          blurb="Time elapsed between your turn and Maya's. Negative means you overlapped; ~+200 ms is the smoothest. Three early dips show light interruptions; a +520 ms stretch at 14:00 is Maya formulating a hard answer."
+          blurb="Approximate turn timing based on the interruption count saved for this debrief."
         >
           <TurnOffsetChart
             data={[
@@ -201,12 +245,12 @@ export function AnalyticsScreen() {
 
         {/* 4. Energy mirroring */}
         <ExpandableMetric
-          eyebrow="Energy mirroring" value="78%" unit="in tune"
-          summary="Tight on pace and tone. Volume drifted apart." accent={colors.lavender} chartKind="line"
-          blurb="Mostly in tune. Strongest alignment in minutes 15–22, when neither of you was leading. Volume drifted apart when you got animated about the cat story."
+          eyebrow="Energy mirroring" value={`${energyScore}%`} unit="in tune"
+          summary="Estimated from balance and interruption signals." accent={colors.lavender} chartKind="line"
+          blurb="This will get more precise as richer per-conversation energy signals are saved."
         >
           <View style={styles.energyRow}>
-            <RingMeter value={78} size={56} stroke={5} color={colors.lavender} label="78" />
+            <RingMeter value={energyScore} size={56} stroke={5} color={colors.lavender} label={String(energyScore)} />
             <View style={{ flex: 1 }}>
               <View style={styles.energyChartRow}>
                 <View style={styles.energyYAxis}>
@@ -224,7 +268,7 @@ export function AnalyticsScreen() {
               </View>
               <View style={styles.energyPips}>
                 <Pip color={colors.terracotta}>You</Pip>
-                <Pip color={colors.lavender}>Maya</Pip>
+                <Pip color={colors.lavender}>Them</Pip>
               </View>
             </View>
           </View>
@@ -240,9 +284,9 @@ export function AnalyticsScreen() {
 
         {/* 5. Linguistic style match */}
         <ExpandableMetric
-          eyebrow="Linguistic style match" value="0.83" unit="LSM score"
-          summary="Strong word-level alignment with Maya." accent={colors.lavender} chartKind="radar"
-          blurb="LSM measures how closely your function-word usage (pronouns, articles, prepositions, conjunctions, quantifiers, auxiliary verbs) tracks the person you're with. 1.0 = perfect mirror. Yours sits at 0.83 — above the high-LSM threshold of 0.70. The two shapes overlap most where it counts: pronouns and conjunctions."
+          eyebrow="Linguistic style match" value={lsmScore.toFixed(2)} unit="LSM score"
+          summary={lsmScore >= 0.7 ? 'Estimated high alignment.' : 'Alignment is still forming.'} accent={colors.lavender} chartKind="radar"
+          blurb="Estimated from available conversation signals until full function-word matching is stored."
         >
           <View style={{ alignItems: 'center', marginBottom: 4 }}>
             <RadarChart
@@ -261,18 +305,18 @@ export function AnalyticsScreen() {
             </View>
             <View style={styles.lsmLegendItem}>
               <View style={[styles.lsmSwatch, { backgroundColor: colors.lavender, borderColor: colors.lavender }]} />
-              <Body style={styles.lsmLegendText}>Maya</Body>
+              <Body style={styles.lsmLegendText}>them</Body>
             </View>
             <Body style={styles.lsmLegendText}>overlap = match</Body>
           </View>
           <View style={styles.lsmScore}>
             <View style={styles.lsmScoreHead}>
               <Body style={{ fontSize: 11, color: colors.ink }}>Overall LSM</Body>
-              <Serif style={{ fontSize: 16, color: colors.lavender }}>0.83</Serif>
+              <Serif style={{ fontSize: 16, color: colors.lavender }}>{lsmScore.toFixed(2)}</Serif>
             </View>
             <View style={styles.lsmTrack}>
               <View style={styles.lsmBand} />
-              <View style={styles.lsmDot} />
+              <View style={[styles.lsmDot, { left: `${Math.round(lsmScore * 100)}%` }]} />
             </View>
             <View style={styles.lsmScaleRow}>
               <Body style={styles.lsmScaleText}>0.0 · no match</Body>
@@ -284,20 +328,17 @@ export function AnalyticsScreen() {
 
         {/* 6. Vocabulary */}
         <ExpandableMetric
-          eyebrow="Vocabulary" value="57%" unit="unique / spoken"
-          summary="236 unique words across 412 spoken — dynamic, not loopy." accent={colors.sand} chartKind="bar"
+          eyebrow="Vocabulary" value={`${uniquePct}%`} unit="unique / spoken"
+          summary={`${uniqueWords.toLocaleString('en-US')} unique across ${totalWords.toLocaleString('en-US')} words.`} accent={colors.sand} chartKind="bar"
           blurb="Vocabulary richness — how many distinct words you used vs how many you spoke. Below, the five most-used lexical paddings: fillers, hedges, and empty qualifiers that buy time without adding meaning."
         >
-          <SerifItalic style={styles.vocabLine}>236 unique words across 412 spoken — dynamic, not loopy.</SerifItalic>
+          <SerifItalic style={styles.vocabLine}>{uniqueWords.toLocaleString('en-US')} unique words across {totalWords.toLocaleString('en-US')} spoken.</SerifItalic>
           <View>
             <View style={styles.vocabHead}>
               <Eyebrow>Top lexical paddings</Eyebrow>
-              <Body style={styles.vocabHeadMeta}>26 total · 6.3% of words</Body>
+              <Body style={styles.vocabHeadMeta}>{fillerTotal} total</Body>
             </View>
-            <FillerBars items={[
-              { phrase: 'honestly', count: 8 }, { phrase: 'kind of', count: 6 }, { phrase: 'you know', count: 5 },
-              { phrase: 'like', count: 4 }, { phrase: 'I mean', count: 3 },
-            ]} />
+            <FillerBars items={fillers} />
           </View>
         </ExpandableMetric>
 
@@ -309,6 +350,9 @@ export function AnalyticsScreen() {
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingTop: 4 },
+  emptyState: { paddingHorizontal: 26, paddingTop: 80, alignItems: 'center' },
+  emptyTitle: { color: colors.ink, fontSize: 24, lineHeight: 28, textAlign: 'center' },
+  emptyBody: { color: colors.muted, fontSize: 13.5, lineHeight: 20, textAlign: 'center', marginTop: 10, maxWidth: 280 },
   titleBlock: { paddingHorizontal: 22, paddingTop: 16, paddingBottom: 6 },
   bigTitle: { fontSize: 30, lineHeight: 32, color: colors.ink },
   meta: { fontSize: 12, color: colors.muted, marginTop: 6, letterSpacing: 0.4 },

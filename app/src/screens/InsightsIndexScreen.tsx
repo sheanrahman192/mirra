@@ -1,5 +1,5 @@
 // Insights · week index — list of conversations for the selected week.
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Screen } from '@/components/Screen';
@@ -7,8 +7,21 @@ import { Body, Serif, SerifItalic, Eyebrow } from '@/components/Typography';
 import { Icon } from '@/components/Icon';
 import { WeekPaginator } from '@/components/WeekPaginator';
 import { colors } from '@/theme/tokens';
-import { WEEKS, ConvListItem, fullDay } from '@/data/weeks';
-import { useDebriefs } from '@/hooks/useDebriefs';
+import { ConvListItem, fullDay } from '@/models/week';
+import { ConversationSummary } from '@/models/debrief';
+import { useProgressSummary } from '@/hooks/useProgressSummary';
+import { formatConversationWhen, formatDuration } from '@/utils/timeFormat';
+
+function toConvListItem(conversation: ConversationSummary): ConvListItem {
+  return {
+    id: conversation.id,
+    title: conversation.title,
+    when: formatConversationWhen(conversation.createdAt),
+    duration: formatDuration(Math.round(conversation.durationMinutes * 60)),
+    tone: conversation.tone,
+    note: conversation.note,
+  };
+}
 
 function ConvRow({ item, isLast, onPress }: { item: ConvListItem; isLast: boolean; onPress: () => void }) {
   return (
@@ -27,10 +40,16 @@ function ConvRow({ item, isLast, onPress }: { item: ConvListItem; isLast: boolea
 
 export function InsightsIndexScreen() {
   const router = useRouter();
-  const [weekIdx, setWeekIdx] = useState(1);
-  const { listItems } = useDebriefs();
-  const w = WEEKS[weekIdx];
-  const convs = listItems.length > 0 ? listItems : w.convsList || [];
+  const [weekIdx, setWeekIdx] = useState(0);
+  const { progress, loading, error } = useProgressSummary();
+  const weeks = progress?.weeks ?? [];
+  const weekTabs = weeks.length > 0 ? weeks.map((week) => ({ label: week.label, upcoming: week.label === 'This week' })) : [{ label: 'This week' }];
+  const selectedWeek = weeks[weekIdx] ?? weeks[0] ?? null;
+  const convs = selectedWeek?.conversations.map(toConvListItem) ?? [];
+
+  useEffect(() => {
+    if (progress?.weeks.length) setWeekIdx(progress.currentWeekIndex);
+  }, [progress?.currentWeekIndex, progress?.weeks.length]);
 
   const grouped = useMemo(() => {
     const order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -42,14 +61,14 @@ export function InsightsIndexScreen() {
     return order.filter((d) => map[d]).map((d) => ({ day: d, items: map[d] }));
   }, [convs]);
 
-  const totalDuration = convs.reduce((acc, c) => acc + parseInt(c.duration, 10), 0);
+  const totalDuration = Math.round(selectedWeek?.totalMinutes ?? 0);
   const hours = Math.floor(totalDuration / 60);
   const mins = totalDuration % 60;
 
   return (
     <Screen topOffset={50}>
       <View style={{ paddingTop: 4 }}>
-        <WeekPaginator weeks={WEEKS} idx={weekIdx} onChange={setWeekIdx} />
+        <WeekPaginator weeks={weekTabs} idx={Math.min(weekIdx, weekTabs.length - 1)} onChange={setWeekIdx} />
       </View>
 
       <View style={styles.titleBlock}>
@@ -61,13 +80,16 @@ export function InsightsIndexScreen() {
           </SerifItalic>
         </Serif>
         <Body style={styles.intro}>
-          {w.upcoming
-            ? 'A new week beginning — your patterns are still forming.'
-            : 'Tap any conversation to see the patterns that shaped it.'}
+          {loading
+            ? 'Loading your saved conversations.'
+            : selectedWeek?.conversationCount
+              ? 'Tap any conversation to see the patterns that shaped it.'
+              : 'Record or import a conversation to start building this week.'}
         </Body>
       </View>
 
       <View style={styles.list}>
+        {error && <Body style={styles.errorText}>{error}</Body>}
         {grouped.map((group, gi) => (
           <View key={group.day} style={{ marginBottom: gi === grouped.length - 1 ? 0 : 14 }}>
             <View style={styles.groupHead}>
@@ -87,7 +109,7 @@ export function InsightsIndexScreen() {
           </View>
         ))}
 
-        {convs.length === 0 && (
+        {!loading && !error && convs.length === 0 && (
           <SerifItalic style={styles.empty}>No conversations yet this week.</SerifItalic>
         )}
       </View>
@@ -103,6 +125,7 @@ const styles = StyleSheet.create({
   list: { paddingHorizontal: 24, paddingTop: 18 },
   groupHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: colors.hairline2, paddingBottom: 4, marginBottom: 2 },
   groupCount: { fontSize: 10.5, color: colors.muted },
+  errorText: { textAlign: 'center', paddingVertical: 30, color: colors.coral, fontSize: 13, lineHeight: 19 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
   rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.hairline2 },
   dot: { width: 8, height: 8, borderRadius: 4 },

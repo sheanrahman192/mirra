@@ -11,14 +11,40 @@ import { ExpandableMetric, Delta } from '@/components/ExpandableMetric';
 import { Donut, RingMeter, WeeklyBars, PairedBarChart, TurnOffsetChart, LSMHistogram } from '@/components/charts';
 import { FillerBars, OffsetZoneLegend } from '@/components/meters';
 import { colors, fonts } from '@/theme/tokens';
-import { WEEKS, DAY_LABELS, Week } from '@/data/weeks';
+import { DAY_LABELS, Week } from '@/models/week';
 import { useProgressSummary } from '@/hooks/useProgressSummary';
 import { ProgressWeekSummary } from '@/models/debrief';
 import { formatConversationWhen, formatDuration } from '@/utils/timeFormat';
 
-const WEEKLY_INTRO = "Five longer conversations this week. Questions up 22%, interruptions down to 2.2 per call — and your words opened up. You're finding a rhythm.";
-
 const comma = (n: number) => n.toLocaleString('en-US');
+
+const EMPTY_WEEK: Week = {
+  label: 'This week',
+  short: 'This week',
+  upcoming: true,
+  title: ['No conversations yet,', 'patterns are waiting.'],
+  convs: 0,
+  mins: '0:00',
+  daily: [0, 0, 0, 0, 0, 0, 0],
+  talkListen: 0,
+  talkTrend: [0],
+  questions: 0,
+  questionsTrend: [0],
+  questionsDaily: { asked: [0, 0, 0, 0, 0, 0, 0], received: [0, 0, 0, 0, 0, 0, 0] },
+  questionsOpenClosed: { asked: { open: 0, closed: 0 }, received: { open: 0, closed: 0 } },
+  interrupts: 0,
+  interruptsTrend: [0],
+  turnOffsetAvg: 0,
+  turnOffsetTrend: DAY_LABELS.map((label) => ({ t: label, ms: null })),
+  energy: 0,
+  energyAxes: [0, 0, 0, 0, 0],
+  lsmAvg: 0,
+  ttrAvg: 0,
+  ttrCounts: { unique: 0, total: 0 },
+  topFillers: [],
+  lsmConvs: [],
+  convsList: [],
+};
 
 type Dir = 'up' | 'down' | 'closer-to-50';
 
@@ -72,7 +98,7 @@ function toWeek(summary: ProgressWeekSummary): Week {
     },
     interrupts: summary.interruptionCount,
     interruptsTrend: [summary.interruptionCount],
-    turnOffsetAvg: summary.interruptionCount > summary.conversationCount ? 160 : 220,
+    turnOffsetAvg: summary.conversationCount ? (summary.interruptionCount > summary.conversationCount ? 160 : 220) : 0,
     turnOffsetTrend: DAY_LABELS.map((label, index) => ({
       t: label,
       ms: summary.dailyMinutes[index] > 0 ? (summary.dailyInterruptions[index] > 0 ? 160 : 220) : null,
@@ -98,16 +124,17 @@ function toWeek(summary: ProgressWeekSummary): Week {
 export function ProgressScreen() {
   const router = useRouter();
   const [weekIdx, setWeekIdx] = useState(1);
-  const { progress } = useProgressSummary();
+  const { progress, loading, error } = useProgressSummary();
   const backendWeeks = useMemo(() => progress?.weeks.map(toWeek) ?? [], [progress]);
-  const weeks = backendWeeks.length > 0 ? backendWeeks : WEEKS;
+  const weeks = backendWeeks.length > 0 ? backendWeeks : [EMPTY_WEEK];
   const usingBackendWeeks = backendWeeks.length > 0;
 
   useEffect(() => {
     if (progress?.weeks.length) setWeekIdx(progress.currentWeekIndex);
+    else setWeekIdx(0);
   }, [progress?.currentWeekIndex, progress?.weeks.length]);
 
-  const w = weeks[weekIdx] ?? weeks[0] ?? WEEKS[1];
+  const w = weeks[weekIdx] ?? weeks[0] ?? EMPTY_WEEK;
   const prevW = weekIdx > 0 ? weeks[weekIdx - 1] : null;
   const backendWeek = usingBackendWeeks ? progress?.weeks[weekIdx] : null;
   const d = makeDeltas(w, prevW);
@@ -131,7 +158,8 @@ export function ProgressScreen() {
 
   // Strengths + nudges
   const aOC = w.questionsOpenClosed.asked;
-  const openPct = Math.round((aOC.open / (aOC.open + aOC.closed)) * 100);
+  const askedTotal = aOC.open + aOC.closed;
+  const openPct = askedTotal > 0 ? Math.round((aOC.open / askedTotal) * 100) : 0;
   const balance = Math.abs(50 - w.talkListen);
   const offsetInPocket = w.turnOffsetAvg >= 100 && w.turnOffsetAvg <= 350;
   const lowLsmCount = w.lsmConvs.filter((c) => c.score < 0.65).length;
@@ -156,14 +184,36 @@ export function ProgressScreen() {
     ? backendWeek?.wins.length
       ? backendWeek.wins
       : ['No conversation patterns yet. Import or record a conversation to start seeing strengths.']
-    : wins;
+    : loading
+      ? ['Loading your conversation patterns.']
+      : error
+        ? ['Progress could not be loaded from the backend.']
+        : wins.length
+          ? wins
+          : ['No conversation patterns yet. Import or record a conversation to start seeing strengths.'];
   const visibleNudges = usingBackendWeeks
     ? backendWeek?.nudges.length
       ? backendWeek.nudges
       : ['Nothing to nudge yet. A first debrief will give Mirra something real to reflect back.']
-    : nudges;
+    : loading
+      ? ['Checking for gentle nudges.']
+      : error
+        ? [error]
+        : nudges.length
+          ? nudges
+          : ['Nothing to nudge yet. A first debrief will give Mirra something real to reflect back.'];
+
+  const intro = loading
+    ? 'Loading your weekly patterns.'
+    : error
+      ? 'Progress is unavailable right now.'
+      : w.convs > 0
+        ? `${w.convs} ${w.convs === 1 ? 'conversation' : 'conversations'} from the backend are shaping this week.`
+        : 'Record or import a conversation to start seeing weekly patterns.';
 
   const todayIdx = weekIdx === 0 ? null : 1;
+  const hasConversations = w.convs > 0;
+  const reflectSubject = w.short.toLowerCase() === 'this week' ? 'this week' : `your ${w.short.toLowerCase()}`;
 
   return (
     <Screen topOffset={50}>
@@ -177,12 +227,8 @@ export function ProgressScreen() {
           {w.title[0]}{'\n'}
           <SerifItalic style={styles.bigTitle}>{w.title[1]}</SerifItalic>
         </Serif>
-        <Body style={styles.intro}>
-          {weekIdx === 1 ? WEEKLY_INTRO : w.upcoming
-            ? 'Just getting started this week — these patterns will firm up by Friday.'
-            : 'A heavier week. You spoke more on average, but your questions stayed steady.'}
-        </Body>
-        <ReflectCTA subject={`your ${w.short.toLowerCase()}`} onPress={() => router.push('/reflect')} />
+        <Body style={styles.intro}>{intro}</Body>
+        <ReflectCTA subject={reflectSubject} onPress={() => router.push('/reflect')} />
       </View>
 
       {/* Daily rhythm */}
@@ -220,8 +266,8 @@ export function ProgressScreen() {
         <ExpandableMetric
           key={`tl-${weekIdx}`}
           eyebrow="Talk / Listen" delta={dTalkListen}
-          value={`${w.talkListen} / ${100 - w.talkListen}`} unit="you / them"
-          summary="Trending toward an even share." accent={colors.terracotta} chartKind="donut" defaultOpen={weekIdx === 1}
+          value={hasConversations ? `${w.talkListen} / ${100 - w.talkListen}` : '—'} unit="you / them"
+          summary={hasConversations ? 'Estimated from saved speech duration.' : 'Awaiting conversation data.'} accent={colors.terracotta} chartKind="donut" defaultOpen={weekIdx === 1}
           blurb={`Last month you spoke 68% of the time. You're creating more room for others — ${w.talkListen}% now, healthy range is 40–60%.`}
         >
           <View style={styles.rowCenter}>
@@ -251,8 +297,8 @@ export function ProgressScreen() {
         <ExpandableMetric
           key={`q-${weekIdx}`}
           eyebrow="Questions per conversation" delta={dQuestions}
-          value={w.questions} unit="avg" summary="Real curiosity showing up." accent={colors.sage} chartKind="bar"
-          blurb={'Tuesday with Maya was your highest — 12 questions in 28 minutes. Most were open: "what was that like?"'}
+          value={w.questions} unit="avg" summary={hasConversations ? 'Question counts are rolling up.' : 'No questions detected yet.'} accent={colors.sage} chartKind="bar"
+          blurb="Questions are counted from each saved debrief and rolled up by day."
         >
           <PairedBarChart asked={w.questionsDaily.asked} received={w.questionsDaily.received} labels={DAY_LABELS} width={300} height={130} askedColor={colors.sage} receivedColor={colors.lavender} />
           <View style={styles.qFooter}>
@@ -269,7 +315,7 @@ export function ProgressScreen() {
           key={`to-${weekIdx}`}
           eyebrow="Turn-floor offset" delta={dOffset}
           value={`+${w.turnOffsetAvg}`} unit="ms · daily avg this week"
-          summary="Tightening toward the ideal +200 ms pocket." accent={colors.terracotta} chartKind="line"
+          summary={hasConversations ? 'Estimated from saved interruption signals.' : 'Awaiting turn-taking data.'} accent={colors.terracotta} chartKind="line"
           blurb="Average gap between speakers' turns each day this week. Negative = you overlapped; ~+200 ms = smooth; +500 ms+ = listener formulating a difficult answer. Days without conversations are blank."
         >
           <TurnOffsetChart data={w.turnOffsetTrend} width={300} height={170} />
@@ -281,8 +327,8 @@ export function ProgressScreen() {
           key={`e-${weekIdx}`}
           eyebrow="Energy mirroring" delta={dEnergy}
           value={`${w.energy}%`} unit="in tune"
-          summary="Closer with quieter people — louder ones drifted." accent={colors.lavender} chartKind="dots"
-          blurb="Strongest when people get quieter — you slow down with them. Louder conversations are your growth edge."
+          summary={hasConversations ? 'Early estimate from available signals.' : 'Awaiting richer audio signals.'} accent={colors.lavender} chartKind="dots"
+          blurb="Energy mirroring will become more precise as richer per-conversation signals are saved."
         >
           <View style={styles.energyRow}>
             <View style={{ alignItems: 'center', gap: 6 }}>
@@ -314,7 +360,7 @@ export function ProgressScreen() {
           key={`lsm-${weekIdx}`}
           eyebrow="Linguistic style match" delta={dLsm}
           value={w.lsmAvg.toFixed(2)} unit="avg LSM"
-          summary={`${lsmPct}% of convos hit high LSM (≥ 0.70).`} accent={colors.lavender} chartKind="bar"
+          summary={hasConversations ? `${lsmPct}% of convos hit high LSM (≥ 0.70).` : 'Awaiting language-match data.'} accent={colors.lavender} chartKind="bar"
           blurb="LSM measures how closely your function-word usage (pronouns, articles, prepositions, etc.) tracks the people you talk with. 1.0 = perfect mirror; 0.70+ counts as high LSM in research."
         >
           <LSMHistogram convs={w.lsmConvs} width={300} height={150} />

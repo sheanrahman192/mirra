@@ -116,6 +116,7 @@ function toStats(raw: RawStats) {
     sessionDurationMinutes: raw.session_duration_minutes,
     userSpeechDurationMinutes: raw.user_speech_duration_minutes,
     estimatedWpm: raw.estimated_wpm,
+    metadata: raw.metadata ?? {},
   };
 }
 
@@ -260,7 +261,12 @@ export async function uploadSession(
   metadata: { title?: string; clientDurationSeconds?: number }
 ): Promise<SessionResponse> {
   const form = new FormData();
-  form.append('audio', audio as unknown as Blob);
+  if (audio.uri.startsWith('blob:') || audio.uri.startsWith('data:')) {
+    const blob = await fetch(audio.uri).then((response) => response.blob());
+    form.append('audio', blob, audio.name);
+  } else {
+    form.append('audio', audio as unknown as Blob);
+  }
   form.append('started_at', new Date().toISOString());
   if (metadata.title) form.append('title', metadata.title);
   if (metadata.clientDurationSeconds != null) {

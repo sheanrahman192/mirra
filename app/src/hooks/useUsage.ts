@@ -10,7 +10,12 @@ export function useUsage() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!accessToken) return;
+    if (!accessToken) {
+      setUsage(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {

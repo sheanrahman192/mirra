@@ -5,6 +5,7 @@ export interface ConversationStats {
   sessionDurationMinutes: number;
   userSpeechDurationMinutes: number;
   estimatedWpm: number;
+  metadata: Record<string, unknown>;
 }
 
 export interface DebriefCard {
