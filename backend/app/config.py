@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     open_model_max_tokens: int = 350
     open_model_temperature: float = 0.7
     open_model_timeout_seconds: float = 30.0
+    open_model_include_transcript: bool = False
+    open_model_allow_anonymous: bool = True
+    anonymous_open_model_base_url: str = "https://text.pollinations.ai"
+    anonymous_open_model_name: str = "openai-fast"
+    anonymous_open_model_api_key: str = ""
     free_tier_cap: int = 5
     cors_origins: str = "*"
 

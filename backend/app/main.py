@@ -278,39 +278,4 @@ def reflect(
     if text:
         return {"reply": text, "used_model": True}
 
-    if settings.anthropic_api_key:
-        try:
-            import anthropic
-
-            context = rows[0] if rows else {}
-            system = (
-                "You are Mirra, a warm and concise conversation coach. "
-                "Use the supplied debrief context when available. Keep replies to 1-3 sentences."
-            )
-            history = [
-                {
-                    "role": "assistant" if message.role == "assistant" else "user",
-                    "content": message.content,
-                }
-                for message in payload.messages[-12:]
-                if message.role in {"assistant", "user"}
-            ]
-            history.append(
-                {
-                    "role": "user",
-                    "content": f"Debrief context:\n{context}\n\nUser prompt:\n{payload.prompt}",
-                }
-            )
-            response = anthropic.Anthropic(api_key=settings.anthropic_api_key).messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=350,
-                system=system,
-                messages=history,
-            )
-            text = "\n".join(block.text for block in response.content if getattr(block, "type", None) == "text").strip()
-            if text:
-                return {"reply": text, "used_model": True}
-        except Exception:
-            pass
-
     return {"reply": fallback_reflection(rows, payload.prompt), "used_model": False}

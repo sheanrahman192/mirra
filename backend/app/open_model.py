@@ -29,7 +29,7 @@ def _truncate(value: Any, limit: int) -> str:
     return f"{text[:limit].rstrip()}..."
 
 
-def _debrief_context(row: dict) -> str:
+def _debrief_context(row: dict, include_transcript: bool = False) -> str:
     stats = _stats(row)
     pieces = [
         f"Title: {title_for(row)}",
@@ -40,13 +40,17 @@ def _debrief_context(row: dict) -> str:
         f"Questions: {int(stats.get('question_count') or 0)}",
         f"Interruptions: {int(stats.get('interruption_count') or 0)}",
     ]
-    transcript = _truncate(row.get("transcript"), 1200)
-    if transcript:
+    transcript = _truncate(row.get("transcript"), 1200) if include_transcript else ""
+    if include_transcript and transcript:
         pieces.append(f"Transcript excerpt: {transcript}")
     return "\n".join(pieces)
 
 
-def build_reflection_messages(rows: list[dict], payload: ReflectRequest) -> list[dict[str, str]]:
+def build_reflection_messages(
+    rows: list[dict],
+    payload: ReflectRequest,
+    include_transcript: bool = False,
+) -> list[dict[str, str]]:
     messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
     for message in payload.messages[-12:]:
         if message.role not in {"assistant", "user"}:
@@ -56,7 +60,7 @@ def build_reflection_messages(rows: list[dict], payload: ReflectRequest) -> list
             messages.append({"role": message.role, "content": content})
 
     if rows:
-        context = "\n\n".join(_debrief_context(row) for row in rows[:3])
+        context = "\n\n".join(_debrief_context(row, include_transcript) for row in rows[:3])
     else:
         context = "No saved debrief is available yet."
 
@@ -69,31 +73,69 @@ def build_reflection_messages(rows: list[dict], payload: ReflectRequest) -> list
     return messages
 
 
-def generate_open_model_reflection(rows: list[dict], payload: ReflectRequest) -> str | None:
-    token = settings.open_model_token
-    if not token:
-        return None
-
+def _extract_reply(data: dict) -> str | None:
     try:
-        response = httpx.post(
-            f"{settings.open_model_base_url.rstrip('/')}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": settings.open_model_name,
-                "messages": build_reflection_messages(rows, payload),
-                "max_tokens": settings.open_model_max_tokens,
-                "temperature": settings.open_model_temperature,
-            },
-            timeout=settings.open_model_timeout_seconds,
-        )
-        if response.status_code >= 400:
-            return None
-        data = response.json()
         text = data["choices"][0]["message"]["content"]
     except Exception:
         return None
 
     return text.strip() if isinstance(text, str) and text.strip() else None
+
+
+def _post_chat_completion(
+    url: str,
+    model: str,
+    messages: list[dict[str, str]],
+    token: str = "",
+) -> str | None:
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    try:
+        response = httpx.post(
+            url,
+            headers=headers,
+            json={
+                "model": model,
+                "messages": messages,
+                "max_tokens": settings.open_model_max_tokens,
+                "temperature": settings.open_model_temperature,
+                "stream": False,
+            },
+            timeout=settings.open_model_timeout_seconds,
+        )
+        if response.status_code >= 400:
+            return None
+        return _extract_reply(response.json())
+    except Exception:
+        return None
+
+
+def generate_open_model_reflection(rows: list[dict], payload: ReflectRequest) -> str | None:
+    token = settings.open_model_token
+    if token:
+        messages = build_reflection_messages(
+            rows,
+            payload,
+            include_transcript=settings.open_model_include_transcript,
+        )
+        text = _post_chat_completion(
+            f"{settings.open_model_base_url.rstrip('/')}/chat/completions",
+            settings.open_model_name,
+            messages,
+            token,
+        )
+        if text:
+            return text
+
+    if not settings.open_model_allow_anonymous:
+        return None
+
+    messages = build_reflection_messages(rows, payload, include_transcript=False)
+    return _post_chat_completion(
+        f"{settings.anonymous_open_model_base_url.rstrip('/')}/openai",
+        settings.anonymous_open_model_name,
+        messages,
+        settings.anonymous_open_model_api_key,
+    )

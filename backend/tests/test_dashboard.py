@@ -182,11 +182,11 @@ def test_progress_endpoint():
     assert body["weeks"][0]["conversations"][0]["id"] == ROW_2["id"]
 
 
-def test_reflect_fallback_without_anthropic_key(monkeypatch):
+def test_reflect_fallback_without_model(monkeypatch):
     monkeypatch.setattr("app.open_model.settings.open_model_api_key", "")
     monkeypatch.setattr("app.open_model.settings.hf_token", "")
     monkeypatch.setattr("app.open_model.settings.huggingface_api_key", "")
-    monkeypatch.setattr("app.main.settings.anthropic_api_key", "")
+    monkeypatch.setattr("app.open_model.settings.open_model_allow_anonymous", False)
     r = _client([ROW_1]).post("/reflect", json={"conversation_id": ROW_1["id"], "prompt": "How were my questions?"})
     assert r.status_code == 200
     assert r.json()["used_model"] is False
@@ -198,7 +198,7 @@ def test_reflect_uses_open_model_when_configured(monkeypatch):
     monkeypatch.setattr("app.open_model.settings.hf_token", "")
     monkeypatch.setattr("app.open_model.settings.huggingface_api_key", "")
     monkeypatch.setattr("app.open_model.settings.open_model_name", "Qwen/Qwen2.5-7B-Instruct-1M:fastest")
-    monkeypatch.setattr("app.main.settings.anthropic_api_key", "")
+    monkeypatch.setattr("app.open_model.settings.open_model_allow_anonymous", False)
     response = _HttpResponse(
         200,
         {"choices": [{"message": {"content": "An open model reply."}}]},
@@ -220,33 +220,42 @@ def test_reflect_uses_open_model_when_configured(monkeypatch):
     assert kwargs["json"]["model"] == "Qwen/Qwen2.5-7B-Instruct-1M:fastest"
     assert kwargs["json"]["messages"][0]["role"] == "system"
     assert "Coffee with Maya" in kwargs["json"]["messages"][-1]["content"]
+    assert "Honestly, what was that like?" not in kwargs["json"]["messages"][-1]["content"]
+
+
+def test_reflect_uses_anonymous_open_model_without_key(monkeypatch):
+    monkeypatch.setattr("app.open_model.settings.open_model_api_key", "")
+    monkeypatch.setattr("app.open_model.settings.hf_token", "")
+    monkeypatch.setattr("app.open_model.settings.huggingface_api_key", "")
+    monkeypatch.setattr("app.open_model.settings.open_model_allow_anonymous", True)
+    monkeypatch.setattr("app.open_model.settings.anonymous_open_model_base_url", "https://text.pollinations.ai")
+    monkeypatch.setattr("app.open_model.settings.anonymous_open_model_name", "openai-fast")
+    response = _HttpResponse(
+        200,
+        {"choices": [{"message": {"content": "A keyless open model reply."}}]},
+    )
+    with patch("app.open_model.httpx.post", return_value=response) as post:
+        r = _client([ROW_1]).post("/reflect", json={"conversation_id": ROW_1["id"], "prompt": "What worked?"})
+
+    assert r.status_code == 200
+    assert r.json() == {"reply": "A keyless open model reply.", "used_model": True}
+    args, kwargs = post.call_args
+    assert args[0] == "https://text.pollinations.ai/openai"
+    assert "Authorization" not in kwargs["headers"]
+    assert kwargs["json"]["model"] == "openai-fast"
 
 
 def test_reflect_falls_back_when_open_model_errors(monkeypatch):
     monkeypatch.setattr("app.open_model.settings.open_model_api_key", "hf-test")
     monkeypatch.setattr("app.open_model.settings.hf_token", "")
     monkeypatch.setattr("app.open_model.settings.huggingface_api_key", "")
-    monkeypatch.setattr("app.main.settings.anthropic_api_key", "")
+    monkeypatch.setattr("app.open_model.settings.open_model_allow_anonymous", False)
     with patch("app.open_model.httpx.post", return_value=_HttpResponse(500, {})):
         r = _client([ROW_1]).post("/reflect", json={"conversation_id": ROW_1["id"], "prompt": "How were my questions?"})
 
     assert r.status_code == 200
     assert r.json()["used_model"] is False
     assert "9 questions" in r.json()["reply"]
-
-
-def test_reflect_uses_model_when_configured(monkeypatch):
-    monkeypatch.setattr("app.open_model.settings.open_model_api_key", "")
-    monkeypatch.setattr("app.open_model.settings.hf_token", "")
-    monkeypatch.setattr("app.open_model.settings.huggingface_api_key", "")
-    monkeypatch.setattr("app.main.settings.anthropic_api_key", "test-key")
-    block = type("Block", (), {"type": "text", "text": "A model reply."})()
-    with patch("anthropic.Anthropic") as anthropic:
-        anthropic.return_value.messages.create.return_value.content = [block]
-        r = _client([ROW_1]).post("/reflect", json={"conversation_id": ROW_1["id"], "prompt": "What worked?"})
-
-    assert r.status_code == 200
-    assert r.json() == {"reply": "A model reply.", "used_model": True}
 
 
 def test_fallback_reflection_handles_empty_context():
