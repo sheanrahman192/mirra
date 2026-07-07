@@ -8,13 +8,24 @@ from app.config import settings
 from app.dashboard import talk_listen_percent, title_for
 from app.models.dashboard import ReflectRequest
 
-_SYSTEM_PROMPT = (
-    "You are Mirra, a warm, concise conversation coach. Help the user reflect on a real "
+_BASE_SYSTEM_PROMPT = (
+    "You are Mirra, a concise conversation coach. Help the user reflect on a real "
     "conversation with kindness and specificity. Use the supplied debrief context when it is "
     "available, and say when there is not enough context. Do not diagnose, moralize, or invent "
-    "details. Keep the reply to 1-3 short sentences and ask one gentle follow-up question when "
-    "it would help the user continue."
+    "details. Ask one gentle follow-up question when it would help the user continue."
 )
+
+_TONE_PROMPTS = {
+    "warm_reflective": "Use a warm, reflective tone.",
+    "direct_practical": "Use a direct, practical tone with concrete next steps.",
+    "curious_gentle": "Use a curious, gentle tone and lead with questions.",
+}
+
+_DEPTH_PROMPTS = {
+    "quick": "Keep the reply to one short sentence.",
+    "balanced": "Keep the reply to 1-3 short sentences.",
+    "deep": "Use up to 4 sentences and include a little more nuance.",
+}
 
 
 def _stats(row: dict) -> dict:
@@ -50,8 +61,17 @@ def build_reflection_messages(
     rows: list[dict],
     payload: ReflectRequest,
     include_transcript: bool = False,
+    coaching_tone: str = "warm_reflective",
+    coaching_depth: str = "balanced",
 ) -> list[dict[str, str]]:
-    messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
+    system = " ".join(
+        [
+            _BASE_SYSTEM_PROMPT,
+            _TONE_PROMPTS.get(coaching_tone, _TONE_PROMPTS["warm_reflective"]),
+            _DEPTH_PROMPTS.get(coaching_depth, _DEPTH_PROMPTS["balanced"]),
+        ]
+    )
+    messages = [{"role": "system", "content": system}]
     for message in payload.messages[-12:]:
         if message.role not in {"assistant", "user"}:
             continue
@@ -112,13 +132,21 @@ def _post_chat_completion(
         return None
 
 
-def generate_open_model_reflection(rows: list[dict], payload: ReflectRequest) -> str | None:
+def generate_open_model_reflection(
+    rows: list[dict],
+    payload: ReflectRequest,
+    coaching_tone: str = "warm_reflective",
+    coaching_depth: str = "balanced",
+    include_transcript: bool = False,
+) -> str | None:
     token = settings.open_model_token
     if token:
         messages = build_reflection_messages(
             rows,
             payload,
-            include_transcript=settings.open_model_include_transcript,
+            include_transcript=settings.open_model_include_transcript or include_transcript,
+            coaching_tone=coaching_tone,
+            coaching_depth=coaching_depth,
         )
         text = _post_chat_completion(
             f"{settings.open_model_base_url.rstrip('/')}/chat/completions",
@@ -132,7 +160,13 @@ def generate_open_model_reflection(rows: list[dict], payload: ReflectRequest) ->
     if not settings.open_model_allow_anonymous:
         return None
 
-    messages = build_reflection_messages(rows, payload, include_transcript=False)
+    messages = build_reflection_messages(
+        rows,
+        payload,
+        include_transcript=include_transcript,
+        coaching_tone=coaching_tone,
+        coaching_depth=coaching_depth,
+    )
     return _post_chat_completion(
         f"{settings.anonymous_open_model_base_url.rstrip('/')}/openai",
         settings.anonymous_open_model_name,

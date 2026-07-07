@@ -82,6 +82,21 @@ def main() -> int:
     if progress_code != 200 or not progress.get("weeks"):
         return 1
 
+    settings_code, settings = request("/settings", headers=auth_headers)
+    print("settings", settings_code, {"coaching_tone": settings.get("coaching_tone")})
+    if settings_code != 200:
+        return 1
+
+    settings_patch_code, patched_settings = request(
+        "/settings",
+        "PATCH",
+        {"coaching_tone": "curious_gentle", "reflection_reminders": True},
+        auth_headers,
+    )
+    print("settings_patch", settings_patch_code, {"coaching_tone": patched_settings.get("coaching_tone")})
+    if settings_patch_code != 200 or patched_settings.get("coaching_tone") != "curious_gentle":
+        return 1
+
     reflect_code, reflect = request(
         "/reflect",
         "POST",

@@ -13,9 +13,11 @@ from app.db import get_db
 from app.models.auth import UsernameAuthRequest, UsernameAuthResponse
 from app.models.dashboard import ProfileSummary, ProgressResponse, ReflectRequest, ReflectResponse
 from app.models.debrief import Debrief, SessionResponse
+from app.models.settings import UserSettings, UserSettingsUpdate
 from app.open_model import generate_open_model_reflection
 from app.pipeline import coordinator
 from app.usage import check_and_increment, get_usage
+from app.user_settings import fetch_user_settings, save_user_settings
 
 app = FastAPI(title="Mirra Backend")
 
@@ -181,6 +183,20 @@ def profile_summary(user_id: str = Depends(verify_token), db: Client = Depends(g
     return build_profile_summary(rows, get_usage(db, user_id))
 
 
+@app.get("/settings", response_model=UserSettings)
+def get_settings(user_id: str = Depends(verify_token), db: Client = Depends(get_db)):
+    return fetch_user_settings(db, user_id)
+
+
+@app.patch("/settings", response_model=UserSettings)
+def update_settings(
+    payload: UserSettingsUpdate,
+    user_id: str = Depends(verify_token),
+    db: Client = Depends(get_db),
+):
+    return save_user_settings(db, user_id, payload)
+
+
 @app.get("/analytics/progress", response_model=ProgressResponse)
 def progress_summary(
     weeks: int = Query(8, ge=1, le=26),
@@ -209,6 +225,7 @@ def create_session(
 
     # ponytail: charged on attempt not success; race window OK at 5/month cap
     check_and_increment(db, user_id)
+    user_settings = fetch_user_settings(db, user_id)
     result = coordinator.run(audio_bytes)
     session_id = str(uuid4())
     metadata = {
@@ -229,7 +246,7 @@ def create_session(
                 "pattern_to_reduce": result["pattern_to_reduce"],
                 "thing_to_try_next": result["thing_to_try_next"],
                 "stats": stats,
-                "transcript": result["transcript"],
+                "transcript": result["transcript"] if user_settings.save_transcripts else None,
             }
         )
         .execute()
@@ -274,7 +291,14 @@ def reflect(
     else:
         rows = _fetch_debrief_rows(db, user_id, limit=1)
 
-    text = generate_open_model_reflection(rows, payload)
+    user_settings = fetch_user_settings(db, user_id)
+    text = generate_open_model_reflection(
+        rows,
+        payload,
+        coaching_tone=user_settings.coaching_tone,
+        coaching_depth=user_settings.coaching_depth,
+        include_transcript=user_settings.include_transcript_in_reflect,
+    )
     if text:
         return {"reply": text, "used_model": True}
 

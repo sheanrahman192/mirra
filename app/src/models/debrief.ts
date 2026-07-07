@@ -91,3 +91,20 @@ export interface ReflectMessage {
   role: 'assistant' | 'user';
   content: string;
 }
+
+export type WeeklySummaryDay = 'sunday' | 'monday' | 'friday';
+export type WeeklySummaryTime = 'morning' | 'afternoon' | 'evening';
+export type CoachingTone = 'warm_reflective' | 'direct_practical' | 'curious_gentle';
+export type CoachingDepth = 'quick' | 'balanced' | 'deep';
+
+export interface UserSettings {
+  notificationsEnabled: boolean;
+  weeklySummaryDay: WeeklySummaryDay;
+  weeklySummaryTime: WeeklySummaryTime;
+  reflectionReminders: boolean;
+  productUpdates: boolean;
+  saveTranscripts: boolean;
+  includeTranscriptInReflect: boolean;
+  coachingTone: CoachingTone;
+  coachingDepth: CoachingDepth;
+}

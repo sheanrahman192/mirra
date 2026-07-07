@@ -64,10 +64,11 @@ class _HttpResponse:
 
 
 class _Table:
-    def __init__(self, name: str, rows: list[dict], used: int):
+    def __init__(self, name: str, rows: list[dict], used: int, settings_row: dict | None = None):
         self.name = name
         self.rows = rows
         self.used = used
+        self.settings_row = settings_row
         self.filters: list[tuple[str, object]] = []
         self.single = False
         self.start = 0
@@ -97,6 +98,8 @@ class _Table:
     def execute(self):
         if self.name == "debrief_usage":
             return _Result({"count": self.used} if self.used else None)
+        if self.name == "user_settings":
+            return _Result(self.settings_row)
 
         rows = self.rows
         for key, value in self.filters:
@@ -109,16 +112,17 @@ class _Table:
 
 
 class _Db:
-    def __init__(self, rows: list[dict], used: int = 2):
+    def __init__(self, rows: list[dict], used: int = 2, settings_row: dict | None = None):
         self.rows = rows
         self.used = used
+        self.settings_row = settings_row
 
     def table(self, name: str):
-        return _Table(name, self.rows, self.used)
+        return _Table(name, self.rows, self.used, self.settings_row)
 
 
-def _client(rows: list[dict], used: int = 2) -> TestClient:
-    app.dependency_overrides[get_db] = lambda: _Db(rows, used)
+def _client(rows: list[dict], used: int = 2, settings_row: dict | None = None) -> TestClient:
+    app.dependency_overrides[get_db] = lambda: _Db(rows, used, settings_row)
     app.dependency_overrides[verify_token] = lambda: "user-1"
     return TestClient(app)
 
@@ -221,6 +225,33 @@ def test_reflect_uses_open_model_when_configured(monkeypatch):
     assert kwargs["json"]["messages"][0]["role"] == "system"
     assert "Coffee with Maya" in kwargs["json"]["messages"][-1]["content"]
     assert "Honestly, what was that like?" not in kwargs["json"]["messages"][-1]["content"]
+
+
+def test_reflect_uses_saved_coaching_and_privacy_settings(monkeypatch):
+    monkeypatch.setattr("app.open_model.settings.open_model_api_key", "hf-test")
+    monkeypatch.setattr("app.open_model.settings.hf_token", "")
+    monkeypatch.setattr("app.open_model.settings.huggingface_api_key", "")
+    monkeypatch.setattr("app.open_model.settings.open_model_allow_anonymous", False)
+    response = _HttpResponse(
+        200,
+        {"choices": [{"message": {"content": "A focused reply."}}]},
+    )
+    settings_row = {
+        "coaching_tone": "direct_practical",
+        "coaching_depth": "quick",
+        "include_transcript_in_reflect": True,
+    }
+    with patch("app.open_model.httpx.post", return_value=response) as post:
+        r = _client([ROW_1], settings_row=settings_row).post(
+            "/reflect",
+            json={"conversation_id": ROW_1["id"], "prompt": "What should I do next?"},
+        )
+
+    assert r.status_code == 200
+    _args, kwargs = post.call_args
+    assert "direct, practical" in kwargs["json"]["messages"][0]["content"]
+    assert "one short sentence" in kwargs["json"]["messages"][0]["content"]
+    assert "Honestly, what was that like?" in kwargs["json"]["messages"][-1]["content"]
 
 
 def test_reflect_uses_anonymous_open_model_without_key(monkeypatch):

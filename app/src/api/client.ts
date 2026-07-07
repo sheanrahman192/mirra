@@ -8,6 +8,7 @@ import {
   ProgressWeekSummary,
   ReflectMessage,
   SessionResponse,
+  UserSettings,
   UsageSummary,
 } from '@/models/debrief';
 
@@ -92,6 +93,18 @@ type RawProfileSummary = {
   used_this_month: number;
   remaining: number;
   resets_at: string;
+};
+
+type RawUserSettings = {
+  notifications_enabled: boolean;
+  weekly_summary_day: UserSettings['weeklySummaryDay'];
+  weekly_summary_time: UserSettings['weeklySummaryTime'];
+  reflection_reminders: boolean;
+  product_updates: boolean;
+  save_transcripts: boolean;
+  include_transcript_in_reflect: boolean;
+  coaching_tone: UserSettings['coachingTone'];
+  coaching_depth: UserSettings['coachingDepth'];
 };
 
 function endpoint(path: string) {
@@ -204,6 +217,34 @@ function toProfileSummary(raw: RawProfileSummary): ProfileSummary {
   };
 }
 
+function toUserSettings(raw: RawUserSettings): UserSettings {
+  return {
+    notificationsEnabled: raw.notifications_enabled,
+    weeklySummaryDay: raw.weekly_summary_day,
+    weeklySummaryTime: raw.weekly_summary_time,
+    reflectionReminders: raw.reflection_reminders,
+    productUpdates: raw.product_updates,
+    saveTranscripts: raw.save_transcripts,
+    includeTranscriptInReflect: raw.include_transcript_in_reflect,
+    coachingTone: raw.coaching_tone,
+    coachingDepth: raw.coaching_depth,
+  };
+}
+
+function toRawUserSettingsPatch(patch: Partial<UserSettings>): Partial<RawUserSettings> {
+  const raw: Partial<RawUserSettings> = {};
+  if (patch.notificationsEnabled !== undefined) raw.notifications_enabled = patch.notificationsEnabled;
+  if (patch.weeklySummaryDay !== undefined) raw.weekly_summary_day = patch.weeklySummaryDay;
+  if (patch.weeklySummaryTime !== undefined) raw.weekly_summary_time = patch.weeklySummaryTime;
+  if (patch.reflectionReminders !== undefined) raw.reflection_reminders = patch.reflectionReminders;
+  if (patch.productUpdates !== undefined) raw.product_updates = patch.productUpdates;
+  if (patch.saveTranscripts !== undefined) raw.save_transcripts = patch.saveTranscripts;
+  if (patch.includeTranscriptInReflect !== undefined) raw.include_transcript_in_reflect = patch.includeTranscriptInReflect;
+  if (patch.coachingTone !== undefined) raw.coaching_tone = patch.coachingTone;
+  if (patch.coachingDepth !== undefined) raw.coaching_depth = patch.coachingDepth;
+  return raw;
+}
+
 export async function fetchUsage(token: string): Promise<UsageSummary> {
   const raw = await fetch(endpoint('/usage'), {
     headers: { Authorization: `Bearer ${token}` },
@@ -237,6 +278,22 @@ export async function fetchProfileSummary(token: string): Promise<ProfileSummary
     headers: { Authorization: `Bearer ${token}` },
   }).then((r) => parseResponse<RawProfileSummary>(r));
   return toProfileSummary(raw);
+}
+
+export async function fetchUserSettings(token: string): Promise<UserSettings> {
+  const raw = await fetch(endpoint('/settings'), {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then((r) => parseResponse<RawUserSettings>(r));
+  return toUserSettings(raw);
+}
+
+export async function updateUserSettings(token: string, patch: Partial<UserSettings>): Promise<UserSettings> {
+  const raw = await fetch(endpoint('/settings'), {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(toRawUserSettingsPatch(patch)),
+  }).then((r) => parseResponse<RawUserSettings>(r));
+  return toUserSettings(raw);
 }
 
 export async function sendReflection(

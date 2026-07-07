@@ -1,0 +1,84 @@
+from dataclasses import dataclass
+
+from fastapi.testclient import TestClient
+
+from app.auth import verify_token
+from app.db import get_db
+from app.main import app
+
+
+@dataclass
+class _Result:
+    data: object
+
+
+class _SettingsTable:
+    def __init__(self, db: "_Db"):
+        self.db = db
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def eq(self, *_args, **_kwargs):
+        return self
+
+    def maybe_single(self):
+        return self
+
+    def upsert(self, row: dict):
+        self.db.row = row
+        self._upserted = row
+        return self
+
+    def execute(self):
+        if hasattr(self, "_upserted"):
+            return _Result([self._upserted])
+        return _Result(self.db.row)
+
+
+class _Db:
+    def __init__(self, row: dict | None = None):
+        self.row = row
+
+    def table(self, name: str):
+        assert name == "user_settings"
+        return _SettingsTable(self)
+
+
+def _client(db: _Db) -> TestClient:
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[verify_token] = lambda: "user-1"
+    return TestClient(app)
+
+
+def teardown_function():
+    app.dependency_overrides.clear()
+
+
+def test_get_settings_returns_defaults_when_missing():
+    r = _client(_Db()).get("/settings")
+    assert r.status_code == 200
+    assert r.json()["notifications_enabled"] is True
+    assert r.json()["coaching_tone"] == "warm_reflective"
+
+
+def test_patch_settings_upserts_user_preferences():
+    db = _Db()
+    r = _client(db).patch(
+        "/settings",
+        json={
+            "notifications_enabled": False,
+            "coaching_tone": "direct_practical",
+            "include_transcript_in_reflect": True,
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["notifications_enabled"] is False
+    assert r.json()["coaching_tone"] == "direct_practical"
+    assert db.row["user_id"] == "user-1"
+    assert db.row["include_transcript_in_reflect"] is True
+
+
+def test_patch_settings_rejects_unknown_option():
+    r = _client(_Db()).patch("/settings", json={"coaching_tone": "mean"})
+    assert r.status_code == 422

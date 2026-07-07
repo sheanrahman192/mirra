@@ -1,6 +1,6 @@
 // You · profile — identity, stats, subscription, settings.
-import React from 'react';
-import { Pressable, View, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Linking, Modal, Pressable, Switch, View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import { Screen } from '@/components/Screen';
@@ -10,6 +10,42 @@ import { Icon } from '@/components/Icon';
 import { colors, fonts } from '@/theme/tokens';
 import { useAuth } from '@/auth/AuthContext';
 import { useProfileSummary } from '@/hooks/useProfileSummary';
+import { useUserSettings } from '@/hooks/useUserSettings';
+import { CoachingDepth, CoachingTone, UserSettings, WeeklySummaryDay, WeeklySummaryTime } from '@/models/debrief';
+
+type SettingsPanelId = 'notifications' | 'privacy' | 'coaching' | 'help';
+
+const DAY_OPTIONS: { value: WeeklySummaryDay; label: string }[] = [
+  { value: 'sunday', label: 'Sun' },
+  { value: 'monday', label: 'Mon' },
+  { value: 'friday', label: 'Fri' },
+];
+
+const TIME_OPTIONS: { value: WeeklySummaryTime; label: string }[] = [
+  { value: 'morning', label: 'Morning' },
+  { value: 'afternoon', label: 'Afternoon' },
+  { value: 'evening', label: 'Evening' },
+];
+
+const TONE_OPTIONS: { value: CoachingTone; label: string; hint: string }[] = [
+  { value: 'warm_reflective', label: 'Warm', hint: 'Soft, validating, spacious.' },
+  { value: 'direct_practical', label: 'Direct', hint: 'Clear next steps.' },
+  { value: 'curious_gentle', label: 'Curious', hint: 'Question-led reflection.' },
+];
+
+const DEPTH_OPTIONS: { value: CoachingDepth; label: string }[] = [
+  { value: 'quick', label: 'Quick' },
+  { value: 'balanced', label: 'Balanced' },
+  { value: 'deep', label: 'Deep' },
+];
+
+const dayLabel: Record<WeeklySummaryDay, string> = { sunday: 'Sunday', monday: 'Monday', friday: 'Friday' };
+const timeLabel: Record<WeeklySummaryTime, string> = { morning: 'morning', afternoon: 'afternoon', evening: 'evening' };
+const toneLabel: Record<CoachingTone, string> = {
+  warm_reflective: 'Warm reflective',
+  direct_practical: 'Direct practical',
+  curious_gentle: 'Curious gentle',
+};
 
 function Avatar({ initials = 'MC', size = 84 }: { initials?: string; size?: number }) {
   return (
@@ -33,15 +69,18 @@ function StatPill({ value, label, accent }: { value: string; label: string; acce
   );
 }
 
-function SettingRow({ label, hint, isLast }: { label: string; hint?: string; isLast?: boolean }) {
+function SettingRow({ label, hint, isLast, onPress }: { label: string; hint?: string; isLast?: boolean; onPress: () => void }) {
   return (
-    <View style={[styles.settingRow, !isLast && styles.settingBorder]}>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.settingRow, !isLast && styles.settingBorder, pressed && styles.settingPressed]}
+    >
       <View style={{ flex: 1 }}>
         <Body style={styles.settingLabel}>{label}</Body>
         {hint ? <Body style={styles.settingHint}>{hint}</Body> : null}
       </View>
       <Icon.chevron color="rgba(42,37,32,0.35)" />
-    </View>
+    </Pressable>
   );
 }
 
@@ -53,9 +92,261 @@ function Check({ color }: { color: string }) {
   );
 }
 
+function Segment<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <View style={styles.segment}>
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <Pressable
+            key={option.value}
+            onPress={() => onChange(option.value)}
+            style={[styles.segmentOption, selected && styles.segmentOptionSelected]}
+          >
+            <Body style={[styles.segmentText, selected && styles.segmentTextSelected]}>{option.label}</Body>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function SwitchRow({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <View style={styles.switchRow}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Body style={styles.optionLabel}>{label}</Body>
+        {hint ? <Body style={styles.optionHint}>{hint}</Body> : null}
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ false: 'rgba(42,37,32,0.14)', true: 'rgba(208,136,102,0.45)' }}
+        thumbColor={value ? colors.terracotta : '#F6EFE0'}
+      />
+    </View>
+  );
+}
+
+function ChoiceRow({
+  label,
+  hint,
+  selected,
+  onPress,
+}: {
+  label: string;
+  hint: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={[styles.choiceRow, selected && styles.choiceRowSelected]}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Body style={[styles.optionLabel, selected && styles.choiceLabelSelected]}>{label}</Body>
+        <Body style={styles.optionHint}>{hint}</Body>
+      </View>
+      {selected ? <Check color={colors.terracotta} /> : null}
+    </Pressable>
+  );
+}
+
+function HelpAction({ label, hint, subject }: { label: string; hint: string; subject: string }) {
+  const open = () => {
+    const encoded = encodeURIComponent(subject);
+    void Linking.openURL(`mailto:hello@mirra.app?subject=${encoded}`);
+  };
+  return (
+    <Pressable onPress={open} style={styles.helpAction}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Body style={styles.optionLabel}>{label}</Body>
+        <Body style={styles.optionHint}>{hint}</Body>
+      </View>
+      <Icon.chevron color="rgba(42,37,32,0.35)" />
+    </Pressable>
+  );
+}
+
+function settingsTitle(panel: SettingsPanelId | null) {
+  switch (panel) {
+    case 'notifications':
+      return 'Notifications';
+    case 'privacy':
+      return 'Voice & Privacy';
+    case 'coaching':
+      return 'Coaching Tone';
+    case 'help':
+      return 'Help & Feedback';
+    default:
+      return '';
+  }
+}
+
+function notificationsHint(settings: UserSettings) {
+  if (!settings.notificationsEnabled) return 'Off';
+  return `Weekly summary ${dayLabel[settings.weeklySummaryDay]} ${timeLabel[settings.weeklySummaryTime]}`;
+}
+
+function privacyHint(settings: UserSettings) {
+  if (!settings.saveTranscripts) return 'Transcripts off · audio discarded';
+  return settings.includeTranscriptInReflect ? 'Transcripts saved · Reflect can use excerpts' : 'Transcripts saved · Reflect uses summaries';
+}
+
+function SettingsSheet({
+  panel,
+  settings,
+  loading,
+  saving,
+  error,
+  onClose,
+  onChange,
+}: {
+  panel: SettingsPanelId | null;
+  settings: UserSettings;
+  loading: boolean;
+  saving: boolean;
+  error: string | null;
+  onClose: () => void;
+  onChange: (patch: Partial<UserSettings>) => void;
+}) {
+  const visible = panel !== null;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.sheetScrim}>
+        <View style={styles.sheet}>
+          <View style={styles.sheetGrabber} />
+          <View style={styles.sheetHeader}>
+            <View>
+              <Eyebrow>Settings</Eyebrow>
+              <Serif style={styles.sheetTitle}>{settingsTitle(panel)}</Serif>
+            </View>
+            <Pressable onPress={onClose} hitSlop={10} style={styles.closeButton}>
+              <Body style={styles.closeText}>Done</Body>
+            </Pressable>
+          </View>
+
+          {loading ? (
+            <View style={styles.sheetLoading}>
+              <ActivityIndicator color={colors.terracotta} />
+            </View>
+          ) : null}
+
+          {!loading && panel === 'notifications' ? (
+            <View style={styles.sheetBody}>
+              <SwitchRow
+                label="Weekly summary"
+                hint="A short review of recent conversation patterns."
+                value={settings.notificationsEnabled}
+                onChange={(value) => onChange({ notificationsEnabled: value })}
+              />
+              <View style={styles.optionBlock}>
+                <Body style={styles.optionCaption}>Day</Body>
+                <Segment options={DAY_OPTIONS} value={settings.weeklySummaryDay} onChange={(value) => onChange({ weeklySummaryDay: value })} />
+              </View>
+              <View style={styles.optionBlock}>
+                <Body style={styles.optionCaption}>Time</Body>
+                <Segment options={TIME_OPTIONS} value={settings.weeklySummaryTime} onChange={(value) => onChange({ weeklySummaryTime: value })} />
+              </View>
+              <SwitchRow
+                label="Reflection nudges"
+                hint="Light reminders to revisit a saved debrief."
+                value={settings.reflectionReminders}
+                onChange={(value) => onChange({ reflectionReminders: value })}
+              />
+              <SwitchRow
+                label="Product updates"
+                hint="Occasional notes about new Mirra features."
+                value={settings.productUpdates}
+                onChange={(value) => onChange({ productUpdates: value })}
+              />
+            </View>
+          ) : null}
+
+          {!loading && panel === 'privacy' ? (
+            <View style={styles.sheetBody}>
+              <SwitchRow
+                label="Save transcripts"
+                hint="Keep transcript text with each debrief."
+                value={settings.saveTranscripts}
+                onChange={(value) => onChange({ saveTranscripts: value })}
+              />
+              <SwitchRow
+                label="Use transcript in Reflect"
+                hint="Let Mirra use short excerpts for context."
+                value={settings.includeTranscriptInReflect}
+                onChange={(value) => onChange({ includeTranscriptInReflect: value })}
+              />
+              <View style={styles.factBox}>
+                <Body style={styles.factTitle}>Audio handling</Body>
+                <Body style={styles.factText}>Audio is uploaded for debrief processing, then discarded by the backend.</Body>
+              </View>
+            </View>
+          ) : null}
+
+          {!loading && panel === 'coaching' ? (
+            <View style={styles.sheetBody}>
+              <View style={styles.optionBlock}>
+                <Body style={styles.optionCaption}>Tone</Body>
+                <View style={{ gap: 8 }}>
+                  {TONE_OPTIONS.map((option) => (
+                    <ChoiceRow
+                      key={option.value}
+                      label={option.label}
+                      hint={option.hint}
+                      selected={settings.coachingTone === option.value}
+                      onPress={() => onChange({ coachingTone: option.value })}
+                    />
+                  ))}
+                </View>
+              </View>
+              <View style={styles.optionBlock}>
+                <Body style={styles.optionCaption}>Depth</Body>
+                <Segment options={DEPTH_OPTIONS} value={settings.coachingDepth} onChange={(value) => onChange({ coachingDepth: value })} />
+              </View>
+            </View>
+          ) : null}
+
+          {!loading && panel === 'help' ? (
+            <View style={styles.sheetBody}>
+              <HelpAction label="Send feedback" hint="Tell us what felt useful or odd." subject="Mirra feedback" />
+              <HelpAction label="Report an issue" hint="Share what broke and where." subject="Mirra issue report" />
+              <HelpAction label="Privacy question" hint="Ask about data, audio, or transcripts." subject="Mirra privacy question" />
+            </View>
+          ) : null}
+
+          <View style={styles.sheetFooter}>
+            {saving ? <Body style={styles.saveState}>Saving…</Body> : null}
+            {error ? <Body style={styles.errorText}>{error}</Body> : null}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export function ProfileScreen() {
-  const { user, signOut } = useAuth();
+  const { user, accessToken, signOut } = useAuth();
   const { summary } = useProfileSummary();
+  const { settings, loading: settingsLoading, saving: settingsSaving, error: settingsError, updateSettings } = useUserSettings(accessToken);
+  const [activePanel, setActivePanel] = useState<SettingsPanelId | null>(null);
   const username = typeof user?.user_metadata?.username === 'string' ? user.user_metadata.username : null;
   const label = username ? `@${username}` : user?.email ?? 'signed in';
   const initials = (username ?? user?.email ?? 'MI').slice(0, 2).toUpperCase();
@@ -136,12 +427,24 @@ export function ProfileScreen() {
       <View style={styles.settingsWrap}>
         <Eyebrow style={{ marginBottom: 6 }}>Settings</Eyebrow>
         <Card style={styles.settingsCard}>
-          <SettingRow label="Notifications" hint="Weekly summary on Sunday evenings" />
-          <SettingRow label="Voice & privacy" hint="On-device transcription · audio never leaves your phone" />
-          <SettingRow label="Coaching tone" hint="Warm reflective" />
-          <SettingRow label="Help & feedback" isLast />
+          <SettingRow label="Notifications" hint={notificationsHint(settings)} onPress={() => setActivePanel('notifications')} />
+          <SettingRow label="Voice & privacy" hint={privacyHint(settings)} onPress={() => setActivePanel('privacy')} />
+          <SettingRow label="Coaching tone" hint={toneLabel[settings.coachingTone]} onPress={() => setActivePanel('coaching')} />
+          <SettingRow label="Help & feedback" hint="Contact, issues, privacy" onPress={() => setActivePanel('help')} isLast />
         </Card>
       </View>
+
+      <SettingsSheet
+        panel={activePanel}
+        settings={settings}
+        loading={settingsLoading}
+        saving={settingsSaving}
+        error={settingsError}
+        onClose={() => setActivePanel(null)}
+        onChange={(patch) => {
+          void updateSettings(patch);
+        }}
+      />
 
       <View style={styles.footer}>
         <Pressable onPress={signOut} hitSlop={8}>
@@ -185,9 +488,39 @@ const styles = StyleSheet.create({
   settingsWrap: { paddingHorizontal: 22, paddingTop: 20 },
   settingsCard: { paddingVertical: 4, paddingHorizontal: 16 },
   settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14 },
+  settingPressed: { opacity: 0.7 },
   settingBorder: { borderBottomWidth: 1, borderBottomColor: colors.hairline2 },
   settingLabel: { fontSize: 14.5, color: colors.ink },
   settingHint: { fontSize: 11.5, color: colors.muted, marginTop: 2 },
+  sheetScrim: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(42,37,32,0.24)' },
+  sheet: { backgroundColor: colors.paper, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 28 },
+  sheetGrabber: { alignSelf: 'center', width: 42, height: 4, borderRadius: 2, backgroundColor: 'rgba(42,37,32,0.16)', marginBottom: 14 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 },
+  sheetTitle: { fontSize: 24, lineHeight: 28, color: colors.ink, marginTop: 4 },
+  closeButton: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.card },
+  closeText: { fontSize: 12.5, color: colors.ink2, fontFamily: fonts.bodyMedium },
+  sheetLoading: { paddingVertical: 36, alignItems: 'center' },
+  sheetBody: { paddingTop: 16, gap: 12 },
+  sheetFooter: { minHeight: 22, paddingTop: 10 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 8 },
+  optionBlock: { gap: 8, paddingTop: 4 },
+  optionCaption: { fontSize: 11, color: colors.muted, letterSpacing: 1, textTransform: 'uppercase', fontFamily: fonts.bodyMedium },
+  optionLabel: { fontSize: 14.5, color: colors.ink, lineHeight: 19 },
+  optionHint: { fontSize: 11.5, color: colors.muted, marginTop: 2, lineHeight: 16 },
+  segment: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 16, backgroundColor: 'rgba(42,37,32,0.07)' },
+  segmentOption: { flex: 1, minHeight: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  segmentOptionSelected: { backgroundColor: colors.card },
+  segmentText: { fontSize: 12.5, color: colors.muted, fontFamily: fonts.bodyMedium },
+  segmentTextSelected: { color: colors.ink },
+  choiceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1, borderColor: colors.hairline2, backgroundColor: 'rgba(255,255,255,0.22)' },
+  choiceRowSelected: { borderColor: 'rgba(208,136,102,0.55)', backgroundColor: 'rgba(208,136,102,0.10)' },
+  choiceLabelSelected: { color: colors.terracotta },
+  factBox: { padding: 14, borderRadius: 14, backgroundColor: 'rgba(151,168,135,0.14)', marginTop: 4 },
+  factTitle: { fontSize: 13, color: colors.ink, fontFamily: fonts.bodyMedium },
+  factText: { fontSize: 12, color: colors.ink2, lineHeight: 18, marginTop: 3 },
+  helpAction: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: colors.hairline2 },
+  saveState: { fontSize: 11.5, color: colors.muted },
+  errorText: { fontSize: 11.5, color: colors.terracotta, lineHeight: 16 },
   footer: { paddingHorizontal: 22, paddingTop: 14, alignItems: 'center' },
   signOut: { fontSize: 12.5, color: colors.muted },
   version: { fontSize: 10.5, color: colors.muted, marginTop: 14, letterSpacing: 0.3, opacity: 0.7 },

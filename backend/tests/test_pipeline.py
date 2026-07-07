@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.auth import verify_token
 from app.db import get_db
 from app.main import app
+from app.models.settings import UserSettings
 from app.pipeline.vad import Segment
 from app.pipeline.speaker import filter_user_segments
 from app.pipeline.prosody import compute_stats
@@ -126,6 +127,26 @@ def test_post_sessions_success(mock_run):
     assert data["debrief"]["observation"] == SAMPLE_DEBRIEF["observation"]
     insert_payload = db.table.return_value.insert.call_args.args[0]
     assert "session_id" in insert_payload
+
+
+@patch("app.main.fetch_user_settings")
+@patch("app.main.coordinator.run")
+def test_post_sessions_respects_transcript_setting(mock_run, mock_settings):
+    mock_settings.return_value = UserSettings(save_transcripts=False)
+    mock_run.return_value = {
+        "observation": SAMPLE_DEBRIEF["observation"],
+        "pattern_to_reduce": SAMPLE_DEBRIEF["pattern_to_reduce"],
+        "thing_to_try_next": SAMPLE_DEBRIEF["thing_to_try_next"],
+        "stats": SAMPLE_DEBRIEF["stats"],
+        "transcript": SAMPLE_DEBRIEF["transcript"],
+    }
+    db = _db_for_sessions(under_cap=True)
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[verify_token] = lambda: "user-1"
+    r = TestClient(app).post("/sessions", files={"audio": ("test.wav", _fake_wav(), "audio/wav")})
+    assert r.status_code == 200
+    insert_payload = db.table.return_value.insert.call_args.args[0]
+    assert insert_payload["transcript"] is None
 
 
 @patch("app.main.coordinator.run")
