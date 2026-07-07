@@ -9,7 +9,7 @@ import { Icon } from '@/components/Icon';
 import { colors, fonts } from '@/theme/tokens';
 import { RECENTS, Recent } from '@/data/recents';
 import { ConversationListItem } from '@/models/conversation';
-import { useConversations } from '@/hooks/useConversations';
+import { useDebriefs } from '@/hooks/useDebriefs';
 import { useImportAudio } from '@/hooks/useImportAudio';
 
 const HOME_GREET = "Twelve questions yesterday — your highest this week. Something's clicking.";
@@ -53,7 +53,7 @@ function RecordButton({ size = 172 }: { size?: number }) {
           </Defs>
           <Circle cx={size / 2} cy={size / 2} r={size / 2} fill="url(#rec)" />
         </Svg>
-        <Svg viewBox="0 0 24 24" width={48} height={48}>
+        <Svg viewBox="0 0 24 24" width={48} height={48} style={styles.micIcon}>
           <Rect x={9} y={3} width={6} height={12} rx={3} fill="#fff" />
           <Path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="#fff" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" />
           <Path d="M12 18v3" fill="none" stroke="#fff" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" />
@@ -102,15 +102,15 @@ function ImportButton({ onPress, loading }: { onPress: () => void; loading: bool
 
 export function HomeScreen() {
   const router = useRouter();
-  const { listItems, save } = useConversations();
+  const { listItems, setDebriefs } = useDebriefs();
   const { importAudio, importing } = useImportAudio();
 
   const recents: (ConversationListItem | Recent)[] =
     listItems.length > 0 ? listItems : RECENTS;
 
   async function handleImport() {
-    const conversation = await importAudio();
-    if (conversation) await save(conversation);
+    const debrief = await importAudio();
+    if (debrief) setDebriefs((items) => [debrief, ...items.filter((item) => item.id !== debrief.id)]);
   }
   return (
     <Screen topOffset={56}>
@@ -143,7 +143,12 @@ export function HomeScreen() {
         </View>
         <View style={{ marginTop: 6 }}>
           {recents.map((r, i) => (
-            <RecentRow key={String(r.id)} item={r} isLast={i === recents.length - 1} onPress={() => router.push('/conversation')} />
+            <RecentRow
+              key={String(r.id)}
+              item={r}
+              isLast={i === recents.length - 1}
+              onPress={() => router.push({ pathname: '/conversation', params: { id: String(r.id) } })}
+            />
           ))}
         </View>
       </View>
@@ -166,6 +171,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
     shadowColor: '#BA7253', shadowOffset: { width: 0, height: 14 }, shadowOpacity: 0.3, shadowRadius: 32, elevation: 12,
   },
+  micIcon: { zIndex: 2, elevation: 2 },
   heroHint: { fontSize: 12.5, color: colors.muted, letterSpacing: 0.7, textTransform: 'uppercase', fontFamily: fonts.bodyMedium },
   recentSection: { paddingHorizontal: 24, paddingTop: 20 },
   recentHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 },

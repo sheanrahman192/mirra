@@ -15,6 +15,7 @@ class ConversationStats(BaseModel):
 
 class Debrief(BaseModel):
     id: UUID
+    session_id: str
     user_id: str
     created_at: datetime
     observation: str

@@ -8,6 +8,7 @@ import { Icon } from '@/components/Icon';
 import { WeekPaginator } from '@/components/WeekPaginator';
 import { colors } from '@/theme/tokens';
 import { WEEKS, ConvListItem, fullDay } from '@/data/weeks';
+import { useDebriefs } from '@/hooks/useDebriefs';
 
 function ConvRow({ item, isLast, onPress }: { item: ConvListItem; isLast: boolean; onPress: () => void }) {
   return (
@@ -27,8 +28,9 @@ function ConvRow({ item, isLast, onPress }: { item: ConvListItem; isLast: boolea
 export function InsightsIndexScreen() {
   const router = useRouter();
   const [weekIdx, setWeekIdx] = useState(1);
+  const { listItems } = useDebriefs();
   const w = WEEKS[weekIdx];
-  const convs = w.convsList || [];
+  const convs = listItems.length > 0 ? listItems : w.convsList || [];
 
   const grouped = useMemo(() => {
     const order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -75,7 +77,12 @@ export function InsightsIndexScreen() {
               </Body>
             </View>
             {group.items.map((it, i) => (
-              <ConvRow key={it.id} item={it} isLast={i === group.items.length - 1} onPress={() => router.push('/conversation')} />
+              <ConvRow
+                key={it.id}
+                item={it}
+                isLast={i === group.items.length - 1}
+                onPress={() => router.push({ pathname: '/conversation', params: { id: it.id } })}
+              />
             ))}
           </View>
         ))}

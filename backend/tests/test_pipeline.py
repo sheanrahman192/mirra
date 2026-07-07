@@ -14,6 +14,7 @@ from app.pipeline.prosody import compute_stats
 
 SAMPLE_DEBRIEF = {
     "id": "00000000-0000-0000-0000-000000000001",
+    "session_id": "session-1",
     "user_id": "user-1",
     "created_at": "2026-06-27T00:00:00+00:00",
     "observation": "You asked great questions.",
@@ -113,7 +114,8 @@ def test_post_sessions_success(mock_run):
         "stats": SAMPLE_DEBRIEF["stats"],
         "transcript": SAMPLE_DEBRIEF["transcript"],
     }
-    app.dependency_overrides[get_db] = lambda: _db_for_sessions(under_cap=True)
+    db = _db_for_sessions(under_cap=True)
+    app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[verify_token] = lambda: "user-1"
     r = TestClient(app).post("/sessions", files={"audio": ("test.wav", _fake_wav(), "audio/wav")})
     assert r.status_code == 200
@@ -122,6 +124,27 @@ def test_post_sessions_success(mock_run):
     assert "used_this_month" in data
     assert "remaining" in data
     assert data["debrief"]["observation"] == SAMPLE_DEBRIEF["observation"]
+    insert_payload = db.table.return_value.insert.call_args.args[0]
+    assert "session_id" in insert_payload
+
+
+@patch("app.main.coordinator.run")
+def test_post_sessions_rejects_unsupported_audio_type(mock_run):
+    app.dependency_overrides[get_db] = lambda: _db_for_sessions(under_cap=True)
+    app.dependency_overrides[verify_token] = lambda: "user-1"
+    r = TestClient(app).post("/sessions", files={"audio": ("test.txt", b"hello", "text/plain")})
+    assert r.status_code == 415
+    mock_run.assert_not_called()
+
+
+@patch("app.main.coordinator.run")
+def test_post_sessions_rejects_oversized_audio(mock_run):
+    app.dependency_overrides[get_db] = lambda: _db_for_sessions(under_cap=True)
+    app.dependency_overrides[verify_token] = lambda: "user-1"
+    oversized = b"0" * (25 * 1024 * 1024 + 1)
+    r = TestClient(app).post("/sessions", files={"audio": ("test.wav", oversized, "audio/wav")})
+    assert r.status_code == 413
+    mock_run.assert_not_called()
 
 
 @patch("app.main.coordinator.run")

@@ -1,6 +1,6 @@
 // You · profile — identity, stats, subscription, settings.
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { Pressable, View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import { Screen } from '@/components/Screen';
@@ -8,6 +8,9 @@ import { Card } from '@/components/ui';
 import { Body, Serif, SerifItalic, Eyebrow } from '@/components/Typography';
 import { Icon } from '@/components/Icon';
 import { colors, fonts } from '@/theme/tokens';
+import { useAuth } from '@/auth/AuthContext';
+import { useDebriefs } from '@/hooks/useDebriefs';
+import { useUsage } from '@/hooks/useUsage';
 
 function Avatar({ initials = 'MC', size = 84 }: { initials?: string; size?: number }) {
   return (
@@ -52,6 +55,18 @@ function Check({ color }: { color: string }) {
 }
 
 export function ProfileScreen() {
+  const { user, signOut } = useAuth();
+  const { debriefs } = useDebriefs();
+  const { usage } = useUsage();
+  const username = typeof user?.user_metadata?.username === 'string' ? user.user_metadata.username : null;
+  const label = username ? `@${username}` : user?.email ?? 'signed in';
+  const initials = (username ?? user?.email ?? 'MI').slice(0, 2).toUpperCase();
+  const memberSince = user?.created_at
+    ? new Date(user.created_at).toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
+    : 'Now';
+  const used = usage?.usedThisMonth ?? 0;
+  const remaining = usage?.remaining ?? 5;
+
   return (
     <Screen topOffset={50}>
       {/* Header */}
@@ -62,21 +77,21 @@ export function ProfileScreen() {
 
       {/* Identity */}
       <View style={styles.identity}>
-        <Avatar initials="MC" size={84} />
+        <Avatar initials={initials} size={84} />
         <View style={{ alignItems: 'center' }}>
           <Serif style={styles.name}>
-            Maya <SerifItalic style={styles.name}>Chen</SerifItalic>
+            Mirra <SerifItalic style={styles.name}>Member</SerifItalic>
           </Serif>
-          <Body style={styles.email}>maya.chen@hey.com</Body>
+          <Body style={styles.email}>{label}</Body>
         </View>
         <SerifItalic style={styles.tagline}>"Listening more, talking with care."</SerifItalic>
       </View>
 
       {/* Stats */}
       <View style={styles.stats}>
-        <StatPill value="47" label="Conversations" accent={colors.terracotta} />
-        <StatPill value="28" label="Day streak" accent={colors.sage} />
-        <StatPill value="Mar '25" label="Member since" accent={colors.lavender} />
+        <StatPill value={String(debriefs.length)} label="Conversations" accent={colors.terracotta} />
+        <StatPill value={String(used)} label="Used this month" accent={colors.sage} />
+        <StatPill value={memberSince} label="Member since" accent={colors.lavender} />
       </View>
 
       {/* Subscription */}
@@ -88,7 +103,7 @@ export function ProfileScreen() {
 
           <Body style={styles.subEyebrow}>Current plan</Body>
           <Serif style={styles.subPlan}>Mirra <SerifItalic style={styles.subPlan}>Free</SerifItalic></Serif>
-          <Body style={styles.subDesc}>5 conversations per month · 7-day history · core metrics</Body>
+          <Body style={styles.subDesc}>{remaining} conversations remaining this month · 7-day history · core metrics</Body>
 
           <View style={styles.subDivider} />
 
@@ -131,7 +146,9 @@ export function ProfileScreen() {
       </View>
 
       <View style={styles.footer}>
-        <Body style={styles.signOut}>Sign out</Body>
+        <Pressable onPress={signOut} hitSlop={8}>
+          <Body style={styles.signOut}>Sign out</Body>
+        </Pressable>
         <Body style={styles.version}>Mirra v1.4.2 · made with care</Body>
       </View>
     </Screen>

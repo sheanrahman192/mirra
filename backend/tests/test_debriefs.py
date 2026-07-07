@@ -8,6 +8,7 @@ from app.main import app
 
 SAMPLE = {
     "id": "00000000-0000-0000-0000-000000000001",
+    "session_id": "session-1",
     "user_id": "user-1",
     "created_at": "2026-06-27T00:00:00+00:00",
     "observation": "You asked great questions.",

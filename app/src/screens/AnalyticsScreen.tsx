@@ -1,7 +1,7 @@
 // Insights · single conversation — "Coffee with Maya" deep-dive.
 import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { Card, Pip } from '@/components/ui';
 import { Body, Serif, SerifItalic, Eyebrow } from '@/components/Typography';
@@ -12,6 +12,7 @@ import { ReflectCTA } from '@/components/ReflectCTA';
 import { Donut, RingMeter, RadarChart, TurnOffsetChart, EnergyWave } from '@/components/charts';
 import { FillerBars, SyncBars, OffsetZoneLegend } from '@/components/meters';
 import { colors, fonts } from '@/theme/tokens';
+import { useDebriefs, toConversationListItem } from '@/hooks/useDebriefs';
 
 const TAB_HREF: Record<TabId, '/' | '/insights' | '/progress' | '/profile'> = {
   home: '/', insights: '/insights', progress: '/progress', profile: '/profile',
@@ -38,6 +39,22 @@ function QBar({ label, value, color, sub, max }: { label: string; value: number;
 
 export function AnalyticsScreen() {
   const router = useRouter();
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { debriefs } = useDebriefs();
+  const selected = debriefs.find((d) => d.id === id) ?? debriefs[0] ?? null;
+  const selectedListItem = selected ? toConversationListItem(selected) : null;
+  const title = selectedListItem?.title ?? 'Coffee with Maya';
+  const meta = selectedListItem
+    ? `${selectedListItem.when} · ${selectedListItem.duration}`
+    : 'Tue · 4:12 PM · 28 min · in person';
+  const observation = selected?.observation ?? 'You created lots of space for Maya';
+  const pattern = selected?.patternToReduce ?? 'three small interruptions';
+  const next = selected?.thingToTryNext ?? 'Your energy met hers gently.';
+  const talkPct = selected ? Math.max(0, Math.min(100, Math.round(selected.stats.talkListenRatio * 100))) : 62;
+  const listenPct = 100 - talkPct;
+  const questions = selected?.stats.questionCount ?? 8;
+  const interruptions = selected?.stats.interruptionCount ?? 3;
+  const durationMin = selected?.stats.sessionDurationMinutes ?? 28;
   const goTab = (id: TabId) => router.navigate(TAB_HREF[id]);
 
   return (
@@ -51,9 +68,9 @@ export function AnalyticsScreen() {
 
       <View style={styles.titleBlock}>
         <Serif style={styles.bigTitle}>
-          Coffee with <SerifItalic style={styles.bigTitle}>Maya</SerifItalic>
+          {title}
         </Serif>
-        <Body style={styles.meta}>Tue · 4:12 PM · 28 min · in person</Body>
+        <Body style={styles.meta}>{meta}</Body>
       </View>
 
       {/* Warm reflection */}
@@ -61,11 +78,11 @@ export function AnalyticsScreen() {
         <Card tone="card-2" style={{ padding: 18 }}>
           <Eyebrow style={{ marginBottom: 8 }}>A few things I noticed</Eyebrow>
           <Serif style={styles.reflectText}>
-            You created lots of space for Maya — 38% of the time was hers. There were{' '}
-            <SerifItalic style={[styles.reflectText, { color: colors.terracotta }]}>three small interruptions</SerifItalic>
-            {' '}in the first ten minutes, then none for eighteen. Your energy met hers gently.
+            {observation} — {listenPct}% of the time was theirs. There were{' '}
+            <SerifItalic style={[styles.reflectText, { color: colors.terracotta }]}>{pattern}</SerifItalic>
+            {' '}to notice. {next}
           </Serif>
-          <ReflectCTA subject="what happened with Maya" onPress={() => router.push('/reflect')} />
+          <ReflectCTA subject={title.toLowerCase()} onPress={() => router.push('/reflect')} />
         </Card>
       </View>
 
@@ -78,7 +95,7 @@ export function AnalyticsScreen() {
 
         {/* 1. Talk / Listen */}
         <ExpandableMetric
-          eyebrow="Talk / Listen" value="62 / 38" unit="you / Maya"
+          eyebrow="Talk / Listen" value={`${talkPct} / ${listenPct}`} unit="you / them"
           summary="A little above your usual 55." accent={colors.terracotta} chartKind="donut" defaultOpen
           blurb="Maya had a lot to share today and you mostly let her lead the second half."
         >
@@ -99,7 +116,7 @@ export function AnalyticsScreen() {
 
         {/* 2. Questions */}
         <ExpandableMetric
-          eyebrow="Questions" value="8 / 7" unit="asked / received"
+          eyebrow="Questions" value={String(questions)} unit="asked"
           summary="Nearly even — both of you stayed curious." accent={colors.sage} chartKind="bar"
           blurb={'Open-ended ones too: "what was that like?", "tell me more". The kind that invite, not interrogate.'}
         >
@@ -138,7 +155,7 @@ export function AnalyticsScreen() {
         {/* 3. Turn-floor offset */}
         <ExpandableMetric
           eyebrow="Turn-floor offset" value="+210" unit="ms avg"
-          summary="Mostly in the ideal pocket. One slow patch around minute 14." accent={colors.terracotta} chartKind="line"
+          summary={`${interruptions} interruptions estimated across ${Math.round(durationMin)} minutes.`} accent={colors.terracotta} chartKind="line"
           blurb="Time elapsed between your turn and Maya's. Negative means you overlapped; ~+200 ms is the smoothest. Three early dips show light interruptions; a +520 ms stretch at 14:00 is Maya formulating a hard answer."
         >
           <TurnOffsetChart

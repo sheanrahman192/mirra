@@ -1,14 +1,11 @@
 import { useCallback, useState } from 'react';
 import { Alert } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system/legacy';
 import { Audio } from 'expo-av';
-import { Conversation } from '@/models/conversation';
+import { uploadSession } from '@/api/client';
+import { useAuth } from '@/auth/AuthContext';
+import { DebriefCard } from '@/models/debrief';
 import { titleFromFilename } from '@/utils/timeFormat';
-
-function newId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const AUDIO_TYPES = [
@@ -34,27 +31,29 @@ async function getAudioDuration(uri: string): Promise<number> {
   }
 }
 
-async function persistAudio(sourceUri: string, id: string, ext: string): Promise<string> {
-  const base = FileSystem.documentDirectory;
-  if (!base) throw new Error('No document directory');
-  const dir = `${base}conversations/`;
-  await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-  const dest = `${dir}${id}${ext}`;
-  await FileSystem.copyAsync({ from: sourceUri, to: dest });
-  return dest;
-}
-
-function extensionFromName(name: string): string {
-  const match = name.match(/(\.[a-z0-9]+)$/i);
-  return match?.[1]?.toLowerCase() ?? '.m4a';
+function mimeTypeFor(name: string, provided?: string | null): string {
+  if (provided && provided !== 'application/octet-stream') return provided;
+  const ext = name.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+  if (ext === 'mp3') return 'audio/mpeg';
+  if (ext === 'wav') return 'audio/wav';
+  if (ext === 'm4a' || ext === 'mp4') return 'audio/mp4';
+  if (ext === 'ogg') return 'audio/ogg';
+  if (ext === 'aac') return 'audio/aac';
+  return 'audio/mp4';
 }
 
 export function useImportAudio() {
+  const { accessToken } = useAuth();
   const [importing, setImporting] = useState(false);
 
-  const importAudio = useCallback(async (): Promise<Conversation | null> => {
+  const importAudio = useCallback(async (): Promise<DebriefCard | null> => {
     setImporting(true);
     try {
+      if (!accessToken) {
+        Alert.alert('Sign in required', 'Please sign in before uploading a conversation.');
+        return null;
+      }
+
       const result = await DocumentPicker.getDocumentAsync({
         type: AUDIO_TYPES,
         copyToCacheDirectory: true,
@@ -73,27 +72,21 @@ export function useImportAudio() {
         return null;
       }
 
-      const id = newId();
-      const ext = extensionFromName(asset.name);
-      const audioUri = await persistAudio(asset.uri, id, ext);
-      const durationSeconds = await getAudioDuration(audioUri);
+      const durationSeconds = await getAudioDuration(asset.uri);
+      const response = await uploadSession(
+        accessToken,
+        { uri: asset.uri, name: asset.name, type: mimeTypeFor(asset.name, asset.mimeType) },
+        { title: titleFromFilename(asset.name), clientDurationSeconds: durationSeconds }
+      );
 
-      return {
-        id,
-        title: titleFromFilename(asset.name),
-        uploadedAt: new Date().toISOString(),
-        audioUri,
-        durationSeconds,
-        tone: 'sage',
-        note: 'imported recording',
-      };
+      return response.debrief;
     } catch {
-      Alert.alert('Import failed', 'Could not read that audio file. Try another format.');
+      Alert.alert('Import failed', 'Could not analyze that audio file. Try another format or a shorter recording.');
       return null;
     } finally {
       setImporting(false);
     }
-  }, []);
+  }, [accessToken]);
 
   return { importAudio, importing };
 }

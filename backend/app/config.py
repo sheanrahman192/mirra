@@ -4,9 +4,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     supabase_url: str
     supabase_service_role_key: str
-    supabase_jwt_secret: str
-    openai_api_key: str
-    anthropic_api_key: str
+    supabase_jwt_secret: str = ""
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
     free_tier_cap: int = 5
     cors_origins: str = "*"
 
