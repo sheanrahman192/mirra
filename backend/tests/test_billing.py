@@ -96,7 +96,10 @@ def teardown_function():
     app.dependency_overrides.clear()
 
 
-def test_billing_status_defaults_to_free_when_no_subscription():
+def test_billing_status_defaults_to_free_when_no_subscription(monkeypatch):
+    monkeypatch.setattr(billing.settings, "stripe_secret_key", "")
+    monkeypatch.setattr(billing.settings, "stripe_pro_price_id", "")
+
     r = _client(_Db(used=1)).get("/billing/status")
     assert r.status_code == 200
     body = r.json()
