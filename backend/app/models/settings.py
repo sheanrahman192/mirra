@@ -3,8 +3,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 
-WeeklySummaryDay = Literal["sunday", "monday", "friday"]
-WeeklySummaryTime = Literal["morning", "afternoon", "evening"]
+WeeklySummaryDay = Literal["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+WeeklySummaryTime = Literal["early_morning", "morning", "midday", "afternoon", "evening", "night"]
 CoachingTone = Literal["warm_reflective", "direct_practical", "curious_gentle"]
 CoachingDepth = Literal["quick", "balanced", "deep"]
 

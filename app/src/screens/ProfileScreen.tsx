@@ -21,13 +21,20 @@ type AccountActionId = 'export' | 'billing' | 'signOut';
 const DAY_OPTIONS: { value: WeeklySummaryDay; label: string }[] = [
   { value: 'sunday', label: 'Sun' },
   { value: 'monday', label: 'Mon' },
+  { value: 'tuesday', label: 'Tue' },
+  { value: 'wednesday', label: 'Wed' },
+  { value: 'thursday', label: 'Thu' },
   { value: 'friday', label: 'Fri' },
+  { value: 'saturday', label: 'Sat' },
 ];
 
-const TIME_OPTIONS: { value: WeeklySummaryTime; label: string }[] = [
-  { value: 'morning', label: 'Morning' },
-  { value: 'afternoon', label: 'Afternoon' },
-  { value: 'evening', label: 'Evening' },
+const TIME_OPTIONS: { value: WeeklySummaryTime; label: string; hint: string }[] = [
+  { value: 'early_morning', label: 'Early', hint: '7 AM' },
+  { value: 'morning', label: 'Morning', hint: '9 AM' },
+  { value: 'midday', label: 'Midday', hint: '12 PM' },
+  { value: 'afternoon', label: 'Afternoon', hint: '3 PM' },
+  { value: 'evening', label: 'Evening', hint: '6 PM' },
+  { value: 'night', label: 'Night', hint: '9 PM' },
 ];
 
 const TONE_OPTIONS: { value: CoachingTone; label: string; hint: string }[] = [
@@ -42,8 +49,23 @@ const DEPTH_OPTIONS: { value: CoachingDepth; label: string }[] = [
   { value: 'deep', label: 'Deep' },
 ];
 
-const dayLabel: Record<WeeklySummaryDay, string> = { sunday: 'Sunday', monday: 'Monday', friday: 'Friday' };
-const timeLabel: Record<WeeklySummaryTime, string> = { morning: 'morning', afternoon: 'afternoon', evening: 'evening' };
+const dayLabel: Record<WeeklySummaryDay, string> = {
+  sunday: 'Sunday',
+  monday: 'Monday',
+  tuesday: 'Tuesday',
+  wednesday: 'Wednesday',
+  thursday: 'Thursday',
+  friday: 'Friday',
+  saturday: 'Saturday',
+};
+const timeLabel: Record<WeeklySummaryTime, string> = {
+  early_morning: 'early morning',
+  morning: 'morning',
+  midday: 'midday',
+  afternoon: 'afternoon',
+  evening: 'evening',
+  night: 'night',
+};
 const toneLabel: Record<CoachingTone, string> = {
   warm_reflective: 'Warm reflective',
   direct_practical: 'Direct practical',
@@ -115,6 +137,42 @@ function Segment<T extends string>({
             style={[styles.segmentOption, selected && styles.segmentOptionSelected]}
           >
             <Body style={[styles.segmentText, selected && styles.segmentTextSelected]}>{option.label}</Body>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function ScheduleGrid<T extends string>({
+  options,
+  value,
+  onChange,
+  variant,
+}: {
+  options: { value: T; label: string; hint?: string }[];
+  value: T;
+  onChange: (value: T) => void;
+  variant: 'day' | 'time';
+}) {
+  return (
+    <View style={styles.scheduleGrid}>
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <Pressable
+            key={option.value}
+            onPress={() => onChange(option.value)}
+            style={[
+              styles.scheduleChip,
+              variant === 'day' ? styles.scheduleDayChip : styles.scheduleTimeChip,
+              selected && styles.scheduleChipSelected,
+            ]}
+          >
+            <Body style={[styles.scheduleChipLabel, selected && styles.scheduleChipLabelSelected]}>{option.label}</Body>
+            {option.hint ? (
+              <Body style={[styles.scheduleChipHint, selected && styles.scheduleChipHintSelected]}>{option.hint}</Body>
+            ) : null}
           </Pressable>
         );
       })}
@@ -204,7 +262,7 @@ function settingsTitle(panel: SettingsPanelId | null) {
 
 function notificationsHint(settings: UserSettings) {
   if (!settings.notificationsEnabled) return 'Off';
-  return `Weekly summary ${dayLabel[settings.weeklySummaryDay]} ${timeLabel[settings.weeklySummaryTime]}`;
+  return `Weekly summary ${dayLabel[settings.weeklySummaryDay]} · ${timeLabel[settings.weeklySummaryTime]}`;
 }
 
 function privacyHint(settings: UserSettings) {
@@ -283,12 +341,28 @@ function SettingsSheet({
                 onChange={(value) => onChange({ notificationsEnabled: value })}
               />
               <View style={styles.optionBlock}>
-                <Body style={styles.optionCaption}>Day</Body>
-                <Segment options={DAY_OPTIONS} value={settings.weeklySummaryDay} onChange={(value) => onChange({ weeklySummaryDay: value })} />
+                <View style={styles.scheduleHeader}>
+                  <Body style={styles.optionCaption}>Day</Body>
+                  <Body style={styles.scheduleValue}>{dayLabel[settings.weeklySummaryDay]}</Body>
+                </View>
+                <ScheduleGrid
+                  options={DAY_OPTIONS}
+                  value={settings.weeklySummaryDay}
+                  variant="day"
+                  onChange={(value) => onChange({ weeklySummaryDay: value })}
+                />
               </View>
               <View style={styles.optionBlock}>
-                <Body style={styles.optionCaption}>Time</Body>
-                <Segment options={TIME_OPTIONS} value={settings.weeklySummaryTime} onChange={(value) => onChange({ weeklySummaryTime: value })} />
+                <View style={styles.scheduleHeader}>
+                  <Body style={styles.optionCaption}>Time</Body>
+                  <Body style={styles.scheduleValue}>{timeLabel[settings.weeklySummaryTime]}</Body>
+                </View>
+                <ScheduleGrid
+                  options={TIME_OPTIONS}
+                  value={settings.weeklySummaryTime}
+                  variant="time"
+                  onChange={(value) => onChange({ weeklySummaryTime: value })}
+                />
               </View>
               <SwitchRow
                 label="Reflection nudges"
@@ -752,6 +826,17 @@ const styles = StyleSheet.create({
   optionCaption: { fontSize: 11, color: colors.muted, letterSpacing: 1, textTransform: 'uppercase', fontFamily: fonts.bodyMedium },
   optionLabel: { fontSize: 14.5, color: colors.ink, lineHeight: 19 },
   optionHint: { fontSize: 11.5, color: colors.muted, marginTop: 2, lineHeight: 16 },
+  scheduleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  scheduleValue: { fontSize: 11.5, color: colors.terracotta, fontFamily: fonts.bodyMedium, textTransform: 'capitalize' },
+  scheduleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  scheduleChip: { minHeight: 38, borderRadius: 14, borderWidth: 1, borderColor: colors.hairline2, backgroundColor: 'rgba(255,255,255,0.24)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 8 },
+  scheduleDayChip: { flexBasis: '13.1%', flexGrow: 1 },
+  scheduleTimeChip: { flexBasis: '31.5%', flexGrow: 1, minHeight: 50 },
+  scheduleChipSelected: { borderColor: 'rgba(208,136,102,0.55)', backgroundColor: 'rgba(208,136,102,0.12)' },
+  scheduleChipLabel: { fontSize: 12.5, color: colors.ink2, fontFamily: fonts.bodyMedium, textAlign: 'center', lineHeight: 16 },
+  scheduleChipLabelSelected: { color: colors.terracotta },
+  scheduleChipHint: { fontSize: 10.5, color: colors.muted, marginTop: 2, textAlign: 'center' },
+  scheduleChipHintSelected: { color: colors.ink2 },
   segment: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 16, backgroundColor: 'rgba(42,37,32,0.07)' },
   segmentOption: { flex: 1, minHeight: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   segmentOptionSelected: { backgroundColor: colors.card },

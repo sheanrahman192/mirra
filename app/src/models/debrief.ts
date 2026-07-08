@@ -114,8 +114,8 @@ export interface ReflectMessage {
   content: string;
 }
 
-export type WeeklySummaryDay = 'sunday' | 'monday' | 'friday';
-export type WeeklySummaryTime = 'morning' | 'afternoon' | 'evening';
+export type WeeklySummaryDay = 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday';
+export type WeeklySummaryTime = 'early_morning' | 'morning' | 'midday' | 'afternoon' | 'evening' | 'night';
 export type CoachingTone = 'warm_reflective' | 'direct_practical' | 'curious_gentle';
 export type CoachingDepth = 'quick' | 'balanced' | 'deep';
 

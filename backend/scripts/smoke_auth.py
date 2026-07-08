@@ -100,11 +100,28 @@ def main() -> int:
     settings_patch_code, patched_settings = request(
         "/settings",
         "PATCH",
-        {"coaching_tone": "curious_gentle", "reflection_reminders": True},
+        {
+            "coaching_tone": "curious_gentle",
+            "reflection_reminders": True,
+            "weekly_summary_day": "wednesday",
+            "weekly_summary_time": "night",
+        },
         auth_headers,
     )
-    print("settings_patch", settings_patch_code, {"coaching_tone": patched_settings.get("coaching_tone")})
-    if settings_patch_code != 200 or patched_settings.get("coaching_tone") != "curious_gentle":
+    print(
+        "settings_patch",
+        settings_patch_code,
+        {
+            "coaching_tone": patched_settings.get("coaching_tone"),
+            "weekly_summary": f"{patched_settings.get('weekly_summary_day')} {patched_settings.get('weekly_summary_time')}",
+        },
+    )
+    if (
+        settings_patch_code != 200
+        or patched_settings.get("coaching_tone") != "curious_gentle"
+        or patched_settings.get("weekly_summary_day") != "wednesday"
+        or patched_settings.get("weekly_summary_time") != "night"
+    ):
         return 1
 
     billing_code, billing = request("/billing/status", headers=auth_headers)

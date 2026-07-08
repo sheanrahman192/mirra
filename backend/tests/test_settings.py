@@ -68,14 +68,20 @@ def test_patch_settings_upserts_user_preferences():
         "/settings",
         json={
             "notifications_enabled": False,
+            "weekly_summary_day": "wednesday",
+            "weekly_summary_time": "night",
             "coaching_tone": "direct_practical",
             "include_transcript_in_reflect": True,
         },
     )
     assert r.status_code == 200
     assert r.json()["notifications_enabled"] is False
+    assert r.json()["weekly_summary_day"] == "wednesday"
+    assert r.json()["weekly_summary_time"] == "night"
     assert r.json()["coaching_tone"] == "direct_practical"
     assert db.row["user_id"] == "user-1"
+    assert db.row["weekly_summary_day"] == "wednesday"
+    assert db.row["weekly_summary_time"] == "night"
     assert db.row["include_transcript_in_reflect"] is True
 
 
