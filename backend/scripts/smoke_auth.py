@@ -78,6 +78,15 @@ def main() -> int:
     if profile_code != 200:
         return 1
 
+    export_code, export = request("/account/export", headers=auth_headers)
+    print(
+        "account_export",
+        export_code,
+        {"debriefs": len(export.get("debriefs", [])), "has_settings": bool(export.get("settings"))},
+    )
+    if export_code != 200:
+        return 1
+
     progress_code, progress = request("/analytics/progress?weeks=1", headers=auth_headers)
     print("progress_summary", progress_code, {"weeks": len(progress.get("weeks", []))})
     if progress_code != 200 or not progress.get("weeks"):

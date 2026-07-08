@@ -1,5 +1,6 @@
 import { env } from '@/config/env';
 import {
+  AccountExport,
   BillingStatus,
   ConversationSummary,
   DebriefCard,
@@ -119,6 +120,15 @@ type RawBillingStatus = {
   stripe_configured: boolean;
   checkout_available: boolean;
   portal_available: boolean;
+};
+
+type RawAccountExport = {
+  exported_at: string;
+  user_id: string;
+  profile: RawProfileSummary;
+  settings: RawUserSettings;
+  billing: RawBillingStatus;
+  debriefs: RawDebrief[];
 };
 
 function endpoint(path: string) {
@@ -260,6 +270,17 @@ function toBillingStatus(raw: RawBillingStatus): BillingStatus {
   };
 }
 
+function toAccountExport(raw: RawAccountExport): AccountExport {
+  return {
+    exportedAt: raw.exported_at,
+    userId: raw.user_id,
+    profile: toProfileSummary(raw.profile),
+    settings: toUserSettings(raw.settings),
+    billing: toBillingStatus(raw.billing),
+    debriefs: raw.debriefs.map(toDebrief),
+  };
+}
+
 function toRawUserSettingsPatch(patch: Partial<UserSettings>): Partial<RawUserSettings> {
   const raw: Partial<RawUserSettings> = {};
   if (patch.notificationsEnabled !== undefined) raw.notifications_enabled = patch.notificationsEnabled;
@@ -307,6 +328,13 @@ export async function fetchProfileSummary(token: string): Promise<ProfileSummary
     headers: { Authorization: `Bearer ${token}` },
   }).then((r) => parseResponse<RawProfileSummary>(r));
   return toProfileSummary(raw);
+}
+
+export async function exportAccountData(token: string): Promise<AccountExport> {
+  const raw = await fetch(endpoint('/account/export'), {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then((r) => parseResponse<RawAccountExport>(r));
+  return toAccountExport(raw);
 }
 
 export async function fetchUserSettings(token: string): Promise<UserSettings> {

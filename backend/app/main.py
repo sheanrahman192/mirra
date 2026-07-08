@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
@@ -17,6 +18,7 @@ from app.billing import (
 from app.config import settings
 from app.dashboard import build_profile_summary, build_progress, fallback_reflection
 from app.db import get_db
+from app.models.account import AccountExport
 from app.models.auth import UsernameAuthRequest, UsernameAuthResponse
 from app.models.billing import BillingSessionResponse, BillingStatus, StripeWebhookResponse
 from app.models.dashboard import ProfileSummary, ProgressResponse, ReflectRequest, ReflectResponse
@@ -189,6 +191,19 @@ def usage(user_id: str = Depends(verify_token), db: Client = Depends(get_db)):
 def profile_summary(user_id: str = Depends(verify_token), db: Client = Depends(get_db)):
     rows = _fetch_debrief_rows(db, user_id, limit=500)
     return build_profile_summary(rows, get_usage(db, user_id))
+
+
+@app.get("/account/export", response_model=AccountExport)
+def account_export(user_id: str = Depends(verify_token), db: Client = Depends(get_db)):
+    rows = _fetch_debrief_rows(db, user_id, limit=500)
+    return AccountExport(
+        exported_at=datetime.now(timezone.utc),
+        user_id=user_id,
+        profile=build_profile_summary(rows, get_usage(db, user_id)),
+        settings=fetch_user_settings(db, user_id),
+        billing=fetch_billing_status(db, user_id),
+        debriefs=rows,
+    )
 
 
 @app.get("/settings", response_model=UserSettings)

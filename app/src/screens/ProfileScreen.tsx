@@ -8,6 +8,7 @@ import { Card } from '@/components/ui';
 import { Body, Serif, SerifItalic, Eyebrow } from '@/components/Typography';
 import { Icon } from '@/components/Icon';
 import { colors, fonts } from '@/theme/tokens';
+import { exportAccountData } from '@/api/client';
 import { useAuth } from '@/auth/AuthContext';
 import { useBilling } from '@/hooks/useBilling';
 import { useProfileSummary } from '@/hooks/useProfileSummary';
@@ -15,6 +16,7 @@ import { useUserSettings } from '@/hooks/useUserSettings';
 import { CoachingDepth, CoachingTone, UserSettings, WeeklySummaryDay, WeeklySummaryTime } from '@/models/debrief';
 
 type SettingsPanelId = 'notifications' | 'privacy' | 'coaching' | 'help';
+type AccountActionId = 'export' | 'billing' | 'signOut';
 
 const DAY_OPTIONS: { value: WeeklySummaryDay; label: string }[] = [
   { value: 'sunday', label: 'Sun' },
@@ -217,6 +219,21 @@ function shortBillingDate(value?: string | null) {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+function saveJsonDownload(filename: string, value: unknown) {
+  const json = JSON.stringify(value, null, 2);
+  if (typeof document !== 'undefined' && typeof Blob !== 'undefined' && typeof URL !== 'undefined') {
+    const blob = new Blob([json], { type: 'application/json' });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(href);
+    return;
+  }
+  void Linking.openURL(`data:application/json;charset=utf-8,${encodeURIComponent(json)}`);
+}
+
 function SettingsSheet({
   panel,
   settings,
@@ -350,12 +367,125 @@ function SettingsSheet({
   );
 }
 
+function AccountActionRow({
+  label,
+  hint,
+  loading,
+  destructive,
+  isLast,
+  onPress,
+}: {
+  label: string;
+  hint: string;
+  loading?: boolean;
+  destructive?: boolean;
+  isLast?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={loading}
+      style={({ pressed }) => [styles.accountAction, !isLast && styles.accountActionBorder, pressed && styles.settingPressed]}
+    >
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Body style={[styles.accountActionLabel, destructive && styles.accountActionDanger]}>{label}</Body>
+        <Body style={styles.accountActionHint}>{hint}</Body>
+      </View>
+      {loading ? <ActivityIndicator size="small" color={colors.terracotta} /> : <Icon.chevron color="rgba(42,37,32,0.35)" />}
+    </Pressable>
+  );
+}
+
+function AccountMenu({
+  visible,
+  label,
+  planLabel,
+  busy,
+  note,
+  error,
+  onClose,
+  onExport,
+  onBilling,
+  onHelp,
+  onSignOut,
+}: {
+  visible: boolean;
+  label: string;
+  planLabel: string;
+  busy: AccountActionId | null;
+  note: string | null;
+  error: string | null;
+  onClose: () => void;
+  onExport: () => void;
+  onBilling: () => void;
+  onHelp: () => void;
+  onSignOut: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.menuScrim}>
+        <View style={styles.accountMenu}>
+          <View style={styles.sheetGrabber} />
+          <View style={styles.sheetHeader}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Eyebrow>Account</Eyebrow>
+              <Serif style={styles.sheetTitle}>Mirra Member</Serif>
+              <Body style={styles.accountMenuSubtext}>{label} · {planLabel}</Body>
+            </View>
+            <Pressable onPress={onClose} hitSlop={10} style={styles.closeButton}>
+              <Body style={styles.closeText}>Done</Body>
+            </Pressable>
+          </View>
+
+          <View style={styles.accountActionList}>
+            <AccountActionRow
+              label="Download my data"
+              hint="Conversations, settings, and plan details."
+              loading={busy === 'export'}
+              onPress={onExport}
+            />
+            <AccountActionRow
+              label="Manage plan"
+              hint="Open billing or start Mirra Pro."
+              loading={busy === 'billing'}
+              onPress={onBilling}
+            />
+            <AccountActionRow
+              label="Help & feedback"
+              hint="Contact, issue reports, and privacy questions."
+              onPress={onHelp}
+            />
+            <AccountActionRow
+              label="Sign out"
+              hint="Leave this device signed out."
+              loading={busy === 'signOut'}
+              destructive
+              isLast
+              onPress={onSignOut}
+            />
+          </View>
+
+          <View style={styles.sheetFooter}>
+            {note ? <Body style={styles.saveState}>{note}</Body> : null}
+            {error ? <Body style={styles.errorText}>{error}</Body> : null}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export function ProfileScreen() {
   const { user, accessToken, signOut } = useAuth();
   const { summary } = useProfileSummary();
   const { settings, loading: settingsLoading, saving: settingsSaving, error: settingsError, updateSettings } = useUserSettings(accessToken);
   const { billing, loading: billingLoading, opening: billingOpening, error: billingError, startCheckout, openPortal } = useBilling(accessToken);
   const [activePanel, setActivePanel] = useState<SettingsPanelId | null>(null);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [accountBusy, setAccountBusy] = useState<AccountActionId | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [accountNote, setAccountNote] = useState<string | null>(null);
   const username = typeof user?.user_metadata?.username === 'string' ? user.user_metadata.username : null;
   const label = username ? `@${username}` : user?.email ?? 'signed in';
   const initials = (username ?? user?.email ?? 'MI').slice(0, 2).toUpperCase();
@@ -377,10 +507,55 @@ export function ProfileScreen() {
     : `${freeRemaining} conversations remaining this month · 7-day history · core metrics`;
   const billingNote = billingError ?? (isPro ? 'Manage billing, invoices, and cancellation in Stripe' : 'Cancel anytime · No charge until day 15');
   const billingCta = billingOpening ? 'Opening…' : isPro ? 'Manage plan' : 'Try Pro free for 14 days';
+  const planLabel = isPro ? 'Mirra Pro' : 'Mirra Free';
   const handleBillingPress = async () => {
     const url = isPro ? await openPortal() : await startCheckout();
     if (url) {
       void Linking.openURL(url);
+    }
+  };
+  const handleAccountExport = async () => {
+    if (!accessToken) return;
+    setAccountBusy('export');
+    setAccountError(null);
+    setAccountNote(null);
+    try {
+      const data = await exportAccountData(accessToken);
+      const day = new Date().toISOString().slice(0, 10);
+      saveJsonDownload(`mirra-account-${day}.json`, data);
+      setAccountNote('Data export ready');
+    } catch (err) {
+      setAccountError(err instanceof Error ? err.message : 'Could not export data');
+    } finally {
+      setAccountBusy(null);
+    }
+  };
+  const handleAccountBilling = async () => {
+    setAccountBusy('billing');
+    setAccountError(null);
+    setAccountNote(null);
+    const url = isPro ? await openPortal() : await startCheckout();
+    setAccountBusy(null);
+    if (url) {
+      void Linking.openURL(url);
+    } else {
+      setAccountError('Could not open billing');
+    }
+  };
+  const handleAccountHelp = () => {
+    setAccountMenuOpen(false);
+    setActivePanel('help');
+  };
+  const handleAccountSignOut = async () => {
+    setAccountBusy('signOut');
+    setAccountError(null);
+    try {
+      await signOut();
+      setAccountMenuOpen(false);
+    } catch (err) {
+      setAccountError(err instanceof Error ? err.message : 'Could not sign out');
+    } finally {
+      setAccountBusy(null);
     }
   };
 
@@ -389,7 +564,19 @@ export function ProfileScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Eyebrow>You</Eyebrow>
-        <Icon.dots color={colors.muted} />
+        <Pressable
+          onPress={() => {
+            setAccountError(null);
+            setAccountNote(null);
+            setAccountMenuOpen(true);
+          }}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Account actions"
+          style={({ pressed }) => [styles.headerIconButton, pressed && styles.settingPressed]}
+        >
+          <Icon.dots color={colors.muted} />
+        </Pressable>
       </View>
 
       {/* Identity */}
@@ -480,6 +667,26 @@ export function ProfileScreen() {
         }}
       />
 
+      <AccountMenu
+        visible={accountMenuOpen}
+        label={label}
+        planLabel={planLabel}
+        busy={accountBusy}
+        note={accountNote}
+        error={accountError}
+        onClose={() => setAccountMenuOpen(false)}
+        onExport={() => {
+          void handleAccountExport();
+        }}
+        onBilling={() => {
+          void handleAccountBilling();
+        }}
+        onHelp={handleAccountHelp}
+        onSignOut={() => {
+          void handleAccountSignOut();
+        }}
+      />
+
       <View style={styles.footer}>
         <Pressable onPress={signOut} hitSlop={8}>
           <Body style={styles.signOut}>Sign out</Body>
@@ -492,6 +699,7 @@ export function ProfileScreen() {
 
 const styles = StyleSheet.create({
   header: { paddingHorizontal: 22, paddingTop: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerIconButton: { width: 36, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   identity: { paddingHorizontal: 22, paddingTop: 14, alignItems: 'center', gap: 12 },
   avatar: {
     alignItems: 'center', justifyContent: 'center',
@@ -556,6 +764,15 @@ const styles = StyleSheet.create({
   factTitle: { fontSize: 13, color: colors.ink, fontFamily: fonts.bodyMedium },
   factText: { fontSize: 12, color: colors.ink2, lineHeight: 18, marginTop: 3 },
   helpAction: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: colors.hairline2 },
+  menuScrim: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(42,37,32,0.22)' },
+  accountMenu: { backgroundColor: colors.paper, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 28 },
+  accountMenuSubtext: { fontSize: 12, color: colors.muted, marginTop: 4, lineHeight: 17 },
+  accountActionList: { marginTop: 16, borderTopWidth: 1, borderTopColor: colors.hairline2 },
+  accountAction: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
+  accountActionBorder: { borderBottomWidth: 1, borderBottomColor: colors.hairline2 },
+  accountActionLabel: { fontSize: 14.5, color: colors.ink, fontFamily: fonts.bodyMedium, lineHeight: 19 },
+  accountActionDanger: { color: colors.terracotta },
+  accountActionHint: { fontSize: 11.5, color: colors.muted, marginTop: 2, lineHeight: 16 },
   saveState: { fontSize: 11.5, color: colors.muted },
   errorText: { fontSize: 11.5, color: colors.terracotta, lineHeight: 16 },
   footer: { paddingHorizontal: 22, paddingTop: 14, alignItems: 'center' },

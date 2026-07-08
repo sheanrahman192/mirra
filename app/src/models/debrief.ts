@@ -100,6 +100,15 @@ export interface BillingStatus {
   portalAvailable: boolean;
 }
 
+export interface AccountExport {
+  exportedAt: string;
+  userId: string;
+  profile: ProfileSummary;
+  settings: UserSettings;
+  billing: BillingStatus;
+  debriefs: DebriefCard[];
+}
+
 export interface ReflectMessage {
   role: 'assistant' | 'user';
   content: string;
