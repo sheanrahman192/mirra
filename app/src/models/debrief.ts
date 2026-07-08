@@ -1,10 +1,26 @@
 export interface ConversationStats {
   talkListenRatio: number;
   questionCount: number;
+  openQuestionCount: number;
+  closedQuestionCount: number;
   interruptionCount: number;
+  averageTurnOffsetMs: number;
+  turnOffsetSeries: { t: string; ms: number }[];
   sessionDurationMinutes: number;
   userSpeechDurationMinutes: number;
+  otherSpeechDurationMinutes: number;
   estimatedWpm: number;
+  energyScore: number;
+  energyAxes: number[];
+  energySeriesUser: number[];
+  energySeriesOther: number[];
+  lsmScore: number;
+  lsmDimensionsUser: Record<string, number>;
+  lsmDimensionsReference: Record<string, number>;
+  totalWordCount: number;
+  uniqueWordCount: number;
+  vocabularyRichness: number;
+  fillerCounts: FillerCount[];
   metadata: Record<string, unknown>;
 }
 
@@ -40,6 +56,9 @@ export interface ConversationSummary {
   talkListenPercent: number;
   questionCount: number;
   interruptionCount: number;
+  energyScore: number;
+  lsmScore: number;
+  vocabularyRichness: number;
   tone: string;
   note: string;
 }
@@ -58,13 +77,25 @@ export interface ProgressWeekSummary {
   totalMinutes: number;
   dailyMinutes: number[];
   dailyQuestions: number[];
+  dailyOpenQuestions: number[];
+  dailyClosedQuestions: number[];
   dailyInterruptions: number[];
   averageSessionMinutes: number;
   talkListenPercent: number;
   averageQuestions: number;
   totalQuestions: number;
+  totalOpenQuestions: number;
+  totalClosedQuestions: number;
   interruptionCount: number;
+  averageTurnOffsetMs: number;
+  dailyTurnOffsets: (number | null)[];
   averageWpm: number;
+  energyScore: number;
+  energyAxes: number[];
+  lsmAverage: number;
+  vocabularyUniqueWords: number;
+  vocabularyTotalWords: number;
+  vocabularyRichness: number;
   topFillers: FillerCount[];
   wins: string[];
   nudges: string[];

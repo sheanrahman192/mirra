@@ -17,10 +17,26 @@ import {
 type RawStats = {
   talk_listen_ratio: number;
   question_count: number;
+  open_question_count?: number;
+  closed_question_count?: number;
   interruption_count: number;
+  average_turn_offset_ms?: number;
+  turn_offset_series?: { t: string; ms: number }[];
   session_duration_minutes: number;
   user_speech_duration_minutes: number;
+  other_speech_duration_minutes?: number;
   estimated_wpm: number;
+  energy_score?: number;
+  energy_axes?: number[];
+  energy_series_user?: number[];
+  energy_series_other?: number[];
+  lsm_score?: number;
+  lsm_dimensions_user?: Record<string, number>;
+  lsm_dimensions_reference?: Record<string, number>;
+  total_word_count?: number;
+  unique_word_count?: number;
+  vocabulary_richness?: number;
+  filler_counts?: RawFillerCount[];
   metadata?: Record<string, unknown>;
 };
 
@@ -50,6 +66,9 @@ type RawConversationSummary = {
   talk_listen_percent: number;
   question_count: number;
   interruption_count: number;
+  energy_score?: number;
+  lsm_score?: number;
+  vocabulary_richness?: number;
   tone: string;
   note: string;
 };
@@ -68,13 +87,25 @@ type RawProgressWeek = {
   total_minutes: number;
   daily_minutes: number[];
   daily_questions: number[];
+  daily_open_questions?: number[];
+  daily_closed_questions?: number[];
   daily_interruptions: number[];
   average_session_minutes: number;
   talk_listen_percent: number;
   average_questions: number;
   total_questions: number;
+  total_open_questions?: number;
+  total_closed_questions?: number;
   interruption_count: number;
+  average_turn_offset_ms?: number;
+  daily_turn_offsets?: (number | null)[];
   average_wpm: number;
+  energy_score?: number;
+  energy_axes?: number[];
+  lsm_average?: number;
+  vocabulary_unique_words?: number;
+  vocabulary_total_words?: number;
+  vocabulary_richness?: number;
   top_fillers: RawFillerCount[];
   wins: string[];
   nudges: string[];
@@ -149,10 +180,26 @@ function toStats(raw: RawStats) {
   return {
     talkListenRatio: raw.talk_listen_ratio,
     questionCount: raw.question_count,
+    openQuestionCount: raw.open_question_count ?? 0,
+    closedQuestionCount: raw.closed_question_count ?? 0,
     interruptionCount: raw.interruption_count,
+    averageTurnOffsetMs: raw.average_turn_offset_ms ?? (raw.interruption_count > 0 ? 160 : 220),
+    turnOffsetSeries: raw.turn_offset_series ?? [],
     sessionDurationMinutes: raw.session_duration_minutes,
     userSpeechDurationMinutes: raw.user_speech_duration_minutes,
+    otherSpeechDurationMinutes: raw.other_speech_duration_minutes ?? Math.max(0, raw.session_duration_minutes - raw.user_speech_duration_minutes),
     estimatedWpm: raw.estimated_wpm,
+    energyScore: raw.energy_score ?? 0,
+    energyAxes: raw.energy_axes ?? [0, 0, 0],
+    energySeriesUser: raw.energy_series_user ?? [],
+    energySeriesOther: raw.energy_series_other ?? [],
+    lsmScore: raw.lsm_score ?? 0,
+    lsmDimensionsUser: raw.lsm_dimensions_user ?? {},
+    lsmDimensionsReference: raw.lsm_dimensions_reference ?? {},
+    totalWordCount: raw.total_word_count ?? 0,
+    uniqueWordCount: raw.unique_word_count ?? 0,
+    vocabularyRichness: raw.vocabulary_richness ?? 0,
+    fillerCounts: raw.filler_counts?.map(toFillerCount) ?? [],
     metadata: raw.metadata ?? {},
   };
 }
@@ -188,6 +235,9 @@ function toConversationSummary(raw: RawConversationSummary): ConversationSummary
     talkListenPercent: raw.talk_listen_percent,
     questionCount: raw.question_count,
     interruptionCount: raw.interruption_count,
+    energyScore: raw.energy_score ?? 0,
+    lsmScore: raw.lsm_score ?? 0,
+    vocabularyRichness: raw.vocabulary_richness ?? 0,
     tone: raw.tone,
     note: raw.note,
   };
@@ -207,13 +257,25 @@ function toProgressWeek(raw: RawProgressWeek): ProgressWeekSummary {
     totalMinutes: raw.total_minutes,
     dailyMinutes: raw.daily_minutes,
     dailyQuestions: raw.daily_questions,
+    dailyOpenQuestions: raw.daily_open_questions ?? raw.daily_questions.map(() => 0),
+    dailyClosedQuestions: raw.daily_closed_questions ?? raw.daily_questions.map(() => 0),
     dailyInterruptions: raw.daily_interruptions,
     averageSessionMinutes: raw.average_session_minutes,
     talkListenPercent: raw.talk_listen_percent,
     averageQuestions: raw.average_questions,
     totalQuestions: raw.total_questions,
+    totalOpenQuestions: raw.total_open_questions ?? 0,
+    totalClosedQuestions: raw.total_closed_questions ?? 0,
     interruptionCount: raw.interruption_count,
+    averageTurnOffsetMs: raw.average_turn_offset_ms ?? 0,
+    dailyTurnOffsets: raw.daily_turn_offsets ?? [null, null, null, null, null, null, null],
     averageWpm: raw.average_wpm,
+    energyScore: raw.energy_score ?? 0,
+    energyAxes: raw.energy_axes ?? [0, 0, 0],
+    lsmAverage: raw.lsm_average ?? 0,
+    vocabularyUniqueWords: raw.vocabulary_unique_words ?? 0,
+    vocabularyTotalWords: raw.vocabulary_total_words ?? 0,
+    vocabularyRichness: raw.vocabulary_richness ?? 0,
     topFillers: raw.top_fillers.map(toFillerCount),
     wins: raw.wins,
     nudges: raw.nudges,

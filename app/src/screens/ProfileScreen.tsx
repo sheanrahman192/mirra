@@ -1,5 +1,5 @@
 // You · profile — identity, stats, subscription, settings.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Pressable, Switch, View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
@@ -17,19 +17,20 @@ import { CoachingDepth, CoachingTone, UserSettings, WeeklySummaryDay, WeeklySumm
 
 type SettingsPanelId = 'notifications' | 'privacy' | 'coaching' | 'help';
 type AccountActionId = 'export' | 'billing' | 'signOut';
+type SchedulePickerId = 'day' | 'time';
 
 const DAY_OPTIONS: { value: WeeklySummaryDay; label: string }[] = [
-  { value: 'sunday', label: 'Sun' },
-  { value: 'monday', label: 'Mon' },
-  { value: 'tuesday', label: 'Tue' },
-  { value: 'wednesday', label: 'Wed' },
-  { value: 'thursday', label: 'Thu' },
-  { value: 'friday', label: 'Fri' },
-  { value: 'saturday', label: 'Sat' },
+  { value: 'sunday', label: 'Sunday' },
+  { value: 'monday', label: 'Monday' },
+  { value: 'tuesday', label: 'Tuesday' },
+  { value: 'wednesday', label: 'Wednesday' },
+  { value: 'thursday', label: 'Thursday' },
+  { value: 'friday', label: 'Friday' },
+  { value: 'saturday', label: 'Saturday' },
 ];
 
 const TIME_OPTIONS: { value: WeeklySummaryTime; label: string; hint: string }[] = [
-  { value: 'early_morning', label: 'Early', hint: '7 AM' },
+  { value: 'early_morning', label: 'Early morning', hint: '7 AM' },
   { value: 'morning', label: 'Morning', hint: '9 AM' },
   { value: 'midday', label: 'Midday', hint: '12 PM' },
   { value: 'afternoon', label: 'Afternoon', hint: '3 PM' },
@@ -144,42 +145,6 @@ function Segment<T extends string>({
   );
 }
 
-function ScheduleGrid<T extends string>({
-  options,
-  value,
-  onChange,
-  variant,
-}: {
-  options: { value: T; label: string; hint?: string }[];
-  value: T;
-  onChange: (value: T) => void;
-  variant: 'day' | 'time';
-}) {
-  return (
-    <View style={styles.scheduleGrid}>
-      {options.map((option) => {
-        const selected = option.value === value;
-        return (
-          <Pressable
-            key={option.value}
-            onPress={() => onChange(option.value)}
-            style={[
-              styles.scheduleChip,
-              variant === 'day' ? styles.scheduleDayChip : styles.scheduleTimeChip,
-              selected && styles.scheduleChipSelected,
-            ]}
-          >
-            <Body style={[styles.scheduleChipLabel, selected && styles.scheduleChipLabelSelected]}>{option.label}</Body>
-            {option.hint ? (
-              <Body style={[styles.scheduleChipHint, selected && styles.scheduleChipHintSelected]}>{option.hint}</Body>
-            ) : null}
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
 function SwitchRow({
   label,
   hint,
@@ -207,6 +172,31 @@ function SwitchRow({
   );
 }
 
+function ScheduleSettingRow({
+  label,
+  value,
+  isLast,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  isLast?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.scheduleSettingRow, !isLast && styles.scheduleSettingBorder, pressed && styles.settingPressed]}
+    >
+      <Body style={styles.optionLabel}>{label}</Body>
+      <View style={styles.scheduleSettingValueRow}>
+        <Body style={styles.scheduleSettingValue}>{value}</Body>
+        <Icon.chevron color="rgba(42,37,32,0.35)" />
+      </View>
+    </Pressable>
+  );
+}
+
 function ChoiceRow({
   label,
   hint,
@@ -214,7 +204,7 @@ function ChoiceRow({
   onPress,
 }: {
   label: string;
-  hint: string;
+  hint?: string;
   selected: boolean;
   onPress: () => void;
 }) {
@@ -222,7 +212,7 @@ function ChoiceRow({
     <Pressable onPress={onPress} style={[styles.choiceRow, selected && styles.choiceRowSelected]}>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Body style={[styles.optionLabel, selected && styles.choiceLabelSelected]}>{label}</Body>
-        <Body style={styles.optionHint}>{hint}</Body>
+        {hint ? <Body style={styles.optionHint}>{hint}</Body> : null}
       </View>
       {selected ? <Check color={colors.terracotta} /> : null}
     </Pressable>
@@ -263,6 +253,11 @@ function settingsTitle(panel: SettingsPanelId | null) {
 function notificationsHint(settings: UserSettings) {
   if (!settings.notificationsEnabled) return 'Off';
   return `Weekly summary ${dayLabel[settings.weeklySummaryDay]} · ${timeLabel[settings.weeklySummaryTime]}`;
+}
+
+function summaryTimeValue(value: WeeklySummaryTime) {
+  const option = TIME_OPTIONS.find((item) => item.value === value);
+  return option ? `${option.label} · ${option.hint}` : timeLabel[value];
 }
 
 function privacyHint(settings: UserSettings) {
@@ -310,6 +305,15 @@ function SettingsSheet({
   onChange: (patch: Partial<UserSettings>) => void;
 }) {
   const visible = panel !== null;
+  const [schedulePicker, setSchedulePicker] = useState<SchedulePickerId | null>(null);
+  const pickingSchedule = panel === 'notifications' && schedulePicker !== null;
+  const sheetTitle = pickingSchedule ? (schedulePicker === 'day' ? 'Summary Day' : 'Summary Time') : settingsTitle(panel);
+
+  useEffect(() => {
+    if (panel !== 'notifications') {
+      setSchedulePicker(null);
+    }
+  }, [panel]);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -317,9 +321,16 @@ function SettingsSheet({
         <View style={styles.sheet}>
           <View style={styles.sheetGrabber} />
           <View style={styles.sheetHeader}>
-            <View>
-              <Eyebrow>Settings</Eyebrow>
-              <Serif style={styles.sheetTitle}>{settingsTitle(panel)}</Serif>
+            <View style={styles.sheetTitleCluster}>
+              {pickingSchedule ? (
+                <Pressable onPress={() => setSchedulePicker(null)} hitSlop={8} style={styles.sheetBackButton}>
+                  <Icon.back color={colors.ink2} />
+                </Pressable>
+              ) : null}
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Eyebrow>{pickingSchedule ? 'Notifications' : 'Settings'}</Eyebrow>
+                <Serif style={styles.sheetTitle}>{sheetTitle}</Serif>
+              </View>
             </View>
             <Pressable onPress={onClose} hitSlop={10} style={styles.closeButton}>
               <Body style={styles.closeText}>Done</Body>
@@ -332,7 +343,7 @@ function SettingsSheet({
             </View>
           ) : null}
 
-          {!loading && panel === 'notifications' ? (
+          {!loading && panel === 'notifications' && schedulePicker === null ? (
             <View style={styles.sheetBody}>
               <SwitchRow
                 label="Weekly summary"
@@ -340,28 +351,17 @@ function SettingsSheet({
                 value={settings.notificationsEnabled}
                 onChange={(value) => onChange({ notificationsEnabled: value })}
               />
-              <View style={styles.optionBlock}>
-                <View style={styles.scheduleHeader}>
-                  <Body style={styles.optionCaption}>Day</Body>
-                  <Body style={styles.scheduleValue}>{dayLabel[settings.weeklySummaryDay]}</Body>
-                </View>
-                <ScheduleGrid
-                  options={DAY_OPTIONS}
-                  value={settings.weeklySummaryDay}
-                  variant="day"
-                  onChange={(value) => onChange({ weeklySummaryDay: value })}
+              <View style={styles.scheduleSettingList}>
+                <ScheduleSettingRow
+                  label="Summary day"
+                  value={dayLabel[settings.weeklySummaryDay]}
+                  onPress={() => setSchedulePicker('day')}
                 />
-              </View>
-              <View style={styles.optionBlock}>
-                <View style={styles.scheduleHeader}>
-                  <Body style={styles.optionCaption}>Time</Body>
-                  <Body style={styles.scheduleValue}>{timeLabel[settings.weeklySummaryTime]}</Body>
-                </View>
-                <ScheduleGrid
-                  options={TIME_OPTIONS}
-                  value={settings.weeklySummaryTime}
-                  variant="time"
-                  onChange={(value) => onChange({ weeklySummaryTime: value })}
+                <ScheduleSettingRow
+                  label="Summary time"
+                  value={summaryTimeValue(settings.weeklySummaryTime)}
+                  isLast
+                  onPress={() => setSchedulePicker('time')}
                 />
               </View>
               <SwitchRow
@@ -376,6 +376,43 @@ function SettingsSheet({
                 value={settings.productUpdates}
                 onChange={(value) => onChange({ productUpdates: value })}
               />
+            </View>
+          ) : null}
+
+          {!loading && panel === 'notifications' && schedulePicker === 'day' ? (
+            <View style={styles.sheetBody}>
+              <View style={styles.choiceList}>
+                {DAY_OPTIONS.map((option) => (
+                  <ChoiceRow
+                    key={option.value}
+                    label={option.label}
+                    selected={settings.weeklySummaryDay === option.value}
+                    onPress={() => {
+                      onChange({ weeklySummaryDay: option.value });
+                      setSchedulePicker(null);
+                    }}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {!loading && panel === 'notifications' && schedulePicker === 'time' ? (
+            <View style={styles.sheetBody}>
+              <View style={styles.choiceList}>
+                {TIME_OPTIONS.map((option) => (
+                  <ChoiceRow
+                    key={option.value}
+                    label={option.label}
+                    hint={option.hint}
+                    selected={settings.weeklySummaryTime === option.value}
+                    onPress={() => {
+                      onChange({ weeklySummaryTime: option.value });
+                      setSchedulePicker(null);
+                    }}
+                  />
+                ))}
+              </View>
             </View>
           ) : null}
 
@@ -815,6 +852,8 @@ const styles = StyleSheet.create({
   sheet: { backgroundColor: colors.paper, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 28 },
   sheetGrabber: { alignSelf: 'center', width: 42, height: 4, borderRadius: 2, backgroundColor: 'rgba(42,37,32,0.16)', marginBottom: 14 },
   sheetHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 },
+  sheetTitleCluster: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sheetBackButton: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(42,37,32,0.06)' },
   sheetTitle: { fontSize: 24, lineHeight: 28, color: colors.ink, marginTop: 4 },
   closeButton: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.card },
   closeText: { fontSize: 12.5, color: colors.ink2, fontFamily: fonts.bodyMedium },
@@ -826,22 +865,17 @@ const styles = StyleSheet.create({
   optionCaption: { fontSize: 11, color: colors.muted, letterSpacing: 1, textTransform: 'uppercase', fontFamily: fonts.bodyMedium },
   optionLabel: { fontSize: 14.5, color: colors.ink, lineHeight: 19 },
   optionHint: { fontSize: 11.5, color: colors.muted, marginTop: 2, lineHeight: 16 },
-  scheduleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  scheduleValue: { fontSize: 11.5, color: colors.terracotta, fontFamily: fonts.bodyMedium, textTransform: 'capitalize' },
-  scheduleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  scheduleChip: { minHeight: 38, borderRadius: 14, borderWidth: 1, borderColor: colors.hairline2, backgroundColor: 'rgba(255,255,255,0.24)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 8 },
-  scheduleDayChip: { flexBasis: '13.1%', flexGrow: 1 },
-  scheduleTimeChip: { flexBasis: '31.5%', flexGrow: 1, minHeight: 50 },
-  scheduleChipSelected: { borderColor: 'rgba(208,136,102,0.55)', backgroundColor: 'rgba(208,136,102,0.12)' },
-  scheduleChipLabel: { fontSize: 12.5, color: colors.ink2, fontFamily: fonts.bodyMedium, textAlign: 'center', lineHeight: 16 },
-  scheduleChipLabelSelected: { color: colors.terracotta },
-  scheduleChipHint: { fontSize: 10.5, color: colors.muted, marginTop: 2, textAlign: 'center' },
-  scheduleChipHintSelected: { color: colors.ink2 },
+  scheduleSettingList: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.hairline2 },
+  scheduleSettingRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 12 },
+  scheduleSettingBorder: { borderBottomWidth: 1, borderBottomColor: colors.hairline2 },
+  scheduleSettingValueRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, flexShrink: 0 },
+  scheduleSettingValue: { maxWidth: 160, fontSize: 12.5, color: colors.terracotta, fontFamily: fonts.bodyMedium, lineHeight: 17, textAlign: 'right' },
   segment: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 16, backgroundColor: 'rgba(42,37,32,0.07)' },
   segmentOption: { flex: 1, minHeight: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   segmentOptionSelected: { backgroundColor: colors.card },
   segmentText: { fontSize: 12.5, color: colors.muted, fontFamily: fonts.bodyMedium },
   segmentTextSelected: { color: colors.ink },
+  choiceList: { gap: 8 },
   choiceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1, borderColor: colors.hairline2, backgroundColor: 'rgba(255,255,255,0.22)' },
   choiceRowSelected: { borderColor: 'rgba(208,136,102,0.55)', backgroundColor: 'rgba(208,136,102,0.10)' },
   choiceLabelSelected: { color: colors.terracotta },

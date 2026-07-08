@@ -33,9 +33,12 @@ SAMPLE_DEBRIEF = {
 }
 
 
-def _fake_wav() -> bytes:
+def _fake_wav(sample_rate: int = 16000, stereo: bool = False) -> bytes:
     buf = io.BytesIO()
-    sf.write(buf, np.zeros(16000, dtype=np.float32), 16000, format="WAV")
+    audio = np.zeros(sample_rate, dtype=np.float32)
+    if stereo:
+        audio = np.stack([audio, audio], axis=1)
+    sf.write(buf, audio, sample_rate, format="WAV")
     buf.seek(0)
     return buf.read()
 
@@ -55,10 +58,17 @@ def teardown_function():
 
 # --- pure function tests ---
 
-def test_filter_user_segments_top_quartile():
-    segs = [Segment(start=float(i), end=float(i + 1), energy=float(i)) for i in range(4)]
+def test_filter_user_segments_uses_high_energy_cluster():
+    energies = [0.10, 0.12, 0.80, 0.90]
+    segs = [Segment(start=float(i), end=float(i + 1), energy=energy) for i, energy in enumerate(energies)]
     result = filter_user_segments(segs)
-    assert all(s.energy >= 3.0 for s in result)
+    assert [s.energy for s in result] == [0.8, 0.9]
+
+
+def test_filter_user_segments_keeps_single_voice_when_energy_is_close():
+    segs = [Segment(start=float(i), end=float(i + 1), energy=0.45 + i * 0.02) for i in range(4)]
+    result = filter_user_segments(segs)
+    assert result == segs
 
 
 def test_filter_user_segments_empty():
@@ -71,14 +81,61 @@ def test_compute_stats_basic():
     stats = compute_stats(all_segs, user_segs, "Hello world? Yes.", 60.0)
     assert stats["talk_listen_ratio"] == 1.0
     assert stats["question_count"] == 1
+    assert stats["open_question_count"] == 0
+    assert stats["closed_question_count"] == 1
     assert stats["session_duration_minutes"] == 1.0
     assert stats["interruption_count"] == 0
+    assert stats["average_turn_offset_ms"] == 10000
+    assert stats["total_word_count"] == 3
+    assert stats["unique_word_count"] == 3
 
 
 def test_compute_stats_no_other_speech():
     segs = [Segment(0, 10, 0.5)]
     stats = compute_stats(segs, segs, "words", 60.0)
     assert stats["talk_listen_ratio"] == 99.0
+
+
+def test_compute_stats_adds_voice_analysis_from_audio():
+    sr = 16000
+    timeline = np.linspace(0, 3, sr * 3, endpoint=False)
+    audio = (0.08 * np.sin(2 * np.pi * 180 * timeline)).astype(np.float32)
+    all_segs = [Segment(0, 1, 0.08), Segment(1.05, 2, 0.04), Segment(2.5, 3, 0.09)]
+    user_segs = [all_segs[0], all_segs[2]]
+    stats = compute_stats(all_segs, user_segs, "What changed? Did that help? like actually", 3.0, audio=audio, sample_rate=sr)
+    assert stats["question_count"] == 2
+    assert stats["open_question_count"] == 1
+    assert stats["closed_question_count"] == 1
+    assert stats["interruption_count"] == 1
+    assert stats["average_turn_offset_ms"] == 275
+    assert len(stats["energy_axes"]) == 3
+    assert len(stats["energy_series_user"]) == 16
+    assert stats["energy_score"] > 0
+    assert stats["lsm_score"] > 0
+    assert stats["filler_counts"][0] == {"phrase": "like", "count": 1}
+
+
+@patch("app.pipeline.coordinator.analyze")
+@patch("app.pipeline.coordinator.transcribe")
+@patch("app.pipeline.coordinator.filter_user_segments")
+@patch("app.pipeline.coordinator.detect_segments")
+def test_coordinator_resamples_stereo_audio_for_voice_analysis(mock_detect, mock_filter, mock_transcribe, mock_analyze):
+    from app.pipeline import coordinator
+
+    mock_detect.return_value = [Segment(0, 0.5, 0.1)]
+    mock_filter.return_value = [Segment(0, 0.5, 0.1)]
+    mock_transcribe.return_value = "What changed?"
+    mock_analyze.return_value = {"observation": "x", "pattern_to_reduce": "y", "thing_to_try_next": "z"}
+
+    result = coordinator.run(_fake_wav(sample_rate=44100, stereo=True))
+
+    detected_audio, detected_sr = mock_detect.call_args.args
+    transcribed_audio, transcribed_sr, _segments = mock_transcribe.call_args.args
+    assert detected_sr == 16000
+    assert transcribed_sr == 16000
+    assert detected_audio.ndim == 1
+    assert transcribed_audio.ndim == 1
+    assert result["stats"]["session_duration_minutes"] > 0
 
 
 # --- mocked I/O tests ---
@@ -127,6 +184,7 @@ def test_post_sessions_success(mock_run):
     assert data["debrief"]["observation"] == SAMPLE_DEBRIEF["observation"]
     insert_payload = db.table.return_value.insert.call_args.args[0]
     assert "session_id" in insert_payload
+    assert mock_run.call_args.kwargs["content_type"] == "audio/wav"
 
 
 @patch("app.main.fetch_user_settings")
@@ -166,6 +224,16 @@ def test_post_sessions_rejects_oversized_audio(mock_run):
     r = TestClient(app).post("/sessions", files={"audio": ("test.wav", oversized, "audio/wav")})
     assert r.status_code == 413
     mock_run.assert_not_called()
+
+
+@patch("app.main.coordinator.run", side_effect=ValueError("bad audio"))
+def test_post_sessions_returns_422_when_audio_cannot_be_decoded(mock_run):
+    app.dependency_overrides[get_db] = lambda: _db_for_sessions(under_cap=True)
+    app.dependency_overrides[verify_token] = lambda: "user-1"
+    r = TestClient(app).post("/sessions", files={"audio": ("test.wav", b"not really audio", "audio/wav")})
+    assert r.status_code == 422
+    assert r.json()["detail"] == "Could not decode audio"
+    mock_run.assert_called_once()
 
 
 @patch("app.main.coordinator.run")

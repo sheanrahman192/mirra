@@ -242,7 +242,7 @@ def test_pro_user_can_create_session_even_at_free_cap(monkeypatch):
     )
     monkeypatch.setattr(
         "app.main.coordinator.run",
-        lambda _audio: {
+        lambda _audio, **_kwargs: {
             "observation": "You made space.",
             "pattern_to_reduce": "Rushing.",
             "thing_to_try_next": "Pause once.",

@@ -21,9 +21,16 @@ ROW_1 = {
         "talk_listen_ratio": 0.55,
         "question_count": 9,
         "interruption_count": 1,
+        "average_turn_offset_ms": 220,
         "session_duration_minutes": 20.0,
         "user_speech_duration_minutes": 11.0,
         "estimated_wpm": 132.0,
+        "energy_score": 76,
+        "energy_axes": [0.8, 0.7, 0.6],
+        "lsm_score": 0.74,
+        "unique_word_count": 30,
+        "total_word_count": 50,
+        "filler_counts": [{"phrase": "you know", "count": 1}, {"phrase": "i mean", "count": 1}],
         "metadata": {"title": "Coffee with Maya"},
     },
     "transcript": "Honestly, what was that like? I mean, you know, what changed?",
@@ -41,9 +48,15 @@ ROW_2 = {
         "talk_listen_ratio": 2.0,
         "question_count": 2,
         "interruption_count": 3,
+        "average_turn_offset_ms": 160,
         "session_duration_minutes": 40.0,
         "user_speech_duration_minutes": 28.0,
         "estimated_wpm": 145.0,
+        "energy_score": 44,
+        "energy_axes": [0.4, 0.5, 0.6],
+        "lsm_score": 0.61,
+        "unique_word_count": 40,
+        "total_word_count": 100,
     },
     "transcript": "Like actually this was kind of a long update.",
 }
@@ -145,10 +158,27 @@ def test_build_progress_groups_daily_minutes_and_fillers():
     assert week.daily_minutes[1] == 20.0
     assert week.daily_minutes[2] == 40.0
     assert week.daily_questions[1] == 9
+    assert week.daily_open_questions[1] == 1
+    assert week.daily_closed_questions[1] == 1
+    assert week.daily_open_questions[2] == 0
+    assert week.daily_closed_questions[2] == 2
     assert week.daily_interruptions[2] == 3
+    assert week.daily_turn_offsets[1] == 220
+    assert week.daily_turn_offsets[2] == 160
     assert week.total_questions == 11
+    assert week.total_open_questions == 1
+    assert week.total_closed_questions == 3
     assert week.average_questions == 5.5
+    assert week.average_turn_offset_ms == 190
+    assert week.energy_score == 60
+    assert week.energy_axes == [0.6, 0.6, 0.6]
+    assert week.lsm_average == 0.675
+    assert week.vocabulary_unique_words == 70
+    assert week.vocabulary_total_words == 150
+    assert week.vocabulary_richness == 0.467
     assert week.conversations[0].title == "You spoke for most of the conversation"
+    assert week.conversations[0].energy_score == 44
+    assert week.conversations[0].lsm_score == 0.61
     assert any(item.phrase == "you know" for item in week.top_fillers)
 
 
@@ -164,6 +194,9 @@ def test_debrief_detail_returns_owned_row():
     r = _client([ROW_1]).get("/debriefs/00000000-0000-0000-0000-000000000101")
     assert r.status_code == 200
     assert r.json()["id"] == ROW_1["id"]
+    assert r.json()["stats"]["open_question_count"] == 1
+    assert r.json()["stats"]["closed_question_count"] == 1
+    assert r.json()["stats"]["filler_counts"][0] == {"phrase": "you know", "count": 1}
 
 
 def test_debrief_detail_404s_missing_row():

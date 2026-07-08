@@ -69,12 +69,9 @@ function totalMinutesLabel(minutes: number) {
 }
 
 function toWeek(summary: ProgressWeekSummary): Week {
-  const totalQuestions = summary.totalQuestions;
-  const closed = Math.round(totalQuestions * 0.35);
-  const open = Math.max(0, totalQuestions - closed);
-  const receivedDaily = summary.dailyQuestions.map((value) => Math.round(value * 0.7));
-  const uniqueWords = Math.max(0, Math.round(summary.averageWpm * summary.totalMinutes * 0.45));
-  const totalWords = Math.max(uniqueWords, Math.round(summary.averageWpm * summary.totalMinutes));
+  const uniqueWords = summary.vocabularyUniqueWords;
+  const totalWords = Math.max(uniqueWords, summary.vocabularyTotalWords);
+  const energyAxes = [summary.energyAxes[0] ?? 0, summary.energyAxes[1] ?? 0, summary.energyAxes[2] ?? 0];
 
   return {
     label: summary.label,
@@ -91,25 +88,25 @@ function toWeek(summary: ProgressWeekSummary): Week {
     talkTrend: [summary.talkListenPercent],
     questions: summary.averageQuestions,
     questionsTrend: [summary.averageQuestions],
-    questionsDaily: { asked: summary.dailyQuestions, received: receivedDaily },
+    questionsDaily: { asked: summary.dailyOpenQuestions, received: summary.dailyClosedQuestions },
     questionsOpenClosed: {
-      asked: { open, closed },
-      received: { open: Math.round(open * 0.7), closed: Math.round(closed * 0.7) },
+      asked: { open: summary.totalOpenQuestions, closed: summary.totalClosedQuestions },
+      received: { open: 0, closed: 0 },
     },
     interrupts: summary.interruptionCount,
     interruptsTrend: [summary.interruptionCount],
-    turnOffsetAvg: summary.conversationCount ? (summary.interruptionCount > summary.conversationCount ? 160 : 220) : 0,
+    turnOffsetAvg: summary.averageTurnOffsetMs,
     turnOffsetTrend: DAY_LABELS.map((label, index) => ({
       t: label,
-      ms: summary.dailyMinutes[index] > 0 ? (summary.dailyInterruptions[index] > 0 ? 160 : 220) : null,
+      ms: summary.dailyTurnOffsets[index] ?? null,
     })),
-    energy: 0,
-    energyAxes: [0, 0, 0, 0, 0],
-    lsmAvg: 0,
-    ttrAvg: totalWords > 0 ? uniqueWords / totalWords : 0,
+    energy: summary.energyScore,
+    energyAxes,
+    lsmAvg: summary.lsmAverage,
+    ttrAvg: summary.vocabularyRichness || (totalWords > 0 ? uniqueWords / totalWords : 0),
     ttrCounts: { unique: uniqueWords, total: totalWords },
     topFillers: summary.topFillers,
-    lsmConvs: summary.conversations.map((conversation) => ({ name: conversation.title, score: 0 })),
+    lsmConvs: summary.conversations.map((conversation) => ({ name: conversation.title, score: conversation.lsmScore })),
     convsList: summary.conversations.map((conversation) => ({
       id: conversation.id,
       title: conversation.title,
@@ -298,13 +295,13 @@ export function ProgressScreen() {
           key={`q-${weekIdx}`}
           eyebrow="Questions per conversation" delta={dQuestions}
           value={w.questions} unit="avg" summary={hasConversations ? 'Question counts are rolling up.' : 'No questions detected yet.'} accent={colors.sage} chartKind="bar"
-          blurb="Questions are counted from each saved debrief and rolled up by day."
+          blurb="Questions are counted from each saved transcript and grouped by open vs closed wording."
         >
           <PairedBarChart asked={w.questionsDaily.asked} received={w.questionsDaily.received} labels={DAY_LABELS} width={300} height={130} askedColor={colors.sage} receivedColor={colors.lavender} />
           <View style={styles.qFooter}>
             <View style={{ flexDirection: 'row', gap: 12 }}>
-              <Pip color={colors.sage}>You asked · {w.questionsDaily.asked.reduce((a, b) => a + b, 0)}</Pip>
-              <Pip color={colors.lavender}>Received · {w.questionsDaily.received.reduce((a, b) => a + b, 0)}</Pip>
+              <Pip color={colors.sage}>Open · {w.questionsDaily.asked.reduce((a, b) => a + b, 0)}</Pip>
+              <Pip color={colors.lavender}>Closed · {w.questionsDaily.received.reduce((a, b) => a + b, 0)}</Pip>
             </View>
             <Body style={styles.qAvg}>{w.questions} avg / conv</Body>
           </View>
@@ -328,7 +325,7 @@ export function ProgressScreen() {
           eyebrow="Energy mirroring" delta={dEnergy}
           value={`${w.energy}%`} unit="in tune"
           summary={hasConversations ? 'Early estimate from available signals.' : 'Awaiting richer audio signals.'} accent={colors.lavender} chartKind="dots"
-          blurb="Energy mirroring will become more precise as richer per-conversation signals are saved."
+          blurb="Energy mirroring is calculated from saved vocal energy, pitch, pace, and turn-balance signals across this week."
         >
           <View style={styles.energyRow}>
             <View style={{ alignItems: 'center', gap: 6 }}>
@@ -361,7 +358,7 @@ export function ProgressScreen() {
           eyebrow="Linguistic style match" delta={dLsm}
           value={w.lsmAvg.toFixed(2)} unit="avg LSM"
           summary={hasConversations ? `${lsmPct}% of convos hit high LSM (≥ 0.70).` : 'Awaiting language-match data.'} accent={colors.lavender} chartKind="bar"
-          blurb="LSM measures how closely your function-word usage (pronouns, articles, prepositions, etc.) tracks the people you talk with. 1.0 = perfect mirror; 0.70+ counts as high LSM in research."
+          blurb="LSM estimates how closely your function-word usage and vocal mirroring align with a conversational reference profile. 1.0 = strongest alignment; 0.70+ counts as high."
         >
           <LSMHistogram convs={w.lsmConvs} width={300} height={150} />
         </ExpandableMetric>

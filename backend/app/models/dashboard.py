@@ -12,6 +12,9 @@ class ConversationListItem(BaseModel):
     talk_listen_percent: int
     question_count: int
     interruption_count: int
+    energy_score: int = 0
+    lsm_score: float = 0.0
+    vocabulary_richness: float = 0.0
     tone: str
     note: str
 
@@ -30,13 +33,25 @@ class ProgressWeek(BaseModel):
     total_minutes: float
     daily_minutes: list[float] = Field(min_length=7, max_length=7)
     daily_questions: list[int] = Field(min_length=7, max_length=7)
+    daily_open_questions: list[int] = Field(min_length=7, max_length=7)
+    daily_closed_questions: list[int] = Field(min_length=7, max_length=7)
     daily_interruptions: list[int] = Field(min_length=7, max_length=7)
     average_session_minutes: float
     talk_listen_percent: int
     average_questions: float
     total_questions: int
+    total_open_questions: int
+    total_closed_questions: int
     interruption_count: int
+    average_turn_offset_ms: int
+    daily_turn_offsets: list[int | None] = Field(min_length=7, max_length=7)
     average_wpm: float
+    energy_score: int
+    energy_axes: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
+    lsm_average: float
+    vocabulary_unique_words: int
+    vocabulary_total_words: int
+    vocabulary_richness: float
     top_fillers: list[FillerCount]
     wins: list[str]
     nudges: list[str]

@@ -16,7 +16,7 @@ from app.billing import (
     user_has_pro_access,
 )
 from app.config import settings
-from app.dashboard import build_profile_summary, build_progress, fallback_reflection
+from app.dashboard import build_profile_summary, build_progress, enrich_debrief_row, fallback_reflection
 from app.db import get_db
 from app.models.account import AccountExport
 from app.models.auth import UsernameAuthRequest, UsernameAuthResponse
@@ -133,7 +133,7 @@ def _fetch_debrief_rows(db: Client, user_id: str, limit: int = 100, offset: int 
         .range(offset, offset + limit - 1)
         .execute()
     )
-    return result.data or []
+    return [enrich_debrief_row(row) for row in (result.data or [])]
 
 
 def _fetch_debrief_row(db: Client, user_id: str, debrief_id: str) -> dict | None:
@@ -145,7 +145,7 @@ def _fetch_debrief_row(db: Client, user_id: str, debrief_id: str) -> dict | None
         .maybe_single()
         .execute()
     )
-    return result.data if result and result.data else None
+    return enrich_debrief_row(result.data) if result and result.data else None
 
 
 @app.post("/auth/username/sign-up", response_model=UsernameAuthResponse)
@@ -275,7 +275,10 @@ def create_session(
         # ponytail: charged on attempt not success; race window OK at 5/month cap
         check_and_increment(db, user_id)
     user_settings = fetch_user_settings(db, user_id)
-    result = coordinator.run(audio_bytes)
+    try:
+        result = coordinator.run(audio_bytes, content_type=audio.content_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Could not decode audio") from exc
     session_id = str(uuid4())
     metadata = {
         "started_at": started_at,

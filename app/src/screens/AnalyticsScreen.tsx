@@ -21,9 +21,15 @@ const TAB_HREF: Record<TabId, '/' | '/insights' | '/progress' | '/profile'> = {
   home: '/', insights: '/insights', progress: '/progress', profile: '/profile',
 };
 
-const youEnergy = [4, 5, 6, 6, 7, 8, 7, 6, 5, 6, 7, 8, 7, 6, 7, 7];
-const themEnergy = [5, 5, 5, 6, 6, 7, 7, 6, 6, 6, 7, 7, 7, 7, 8, 8];
 const FILLERS = ['honestly', 'kind of', 'you know', 'like', 'i mean', 'actually', 'right'];
+const LSM_AXES = [
+  { key: 'pronouns', label: 'Pronouns' },
+  { key: 'articles', label: 'Articles' },
+  { key: 'prepositions', label: 'Prepositions' },
+  { key: 'conjunctions', label: 'Conjunctions' },
+  { key: 'quantifiers', label: 'Quantifiers' },
+  { key: 'aux_verbs', label: 'Aux. verbs' },
+];
 
 function talkPercent(raw: number) {
   if (raw <= 0) return 0;
@@ -116,20 +122,26 @@ export function AnalyticsScreen() {
   const interruptions = selected.stats.interruptionCount;
   const durationMin = selected.stats.sessionDurationMinutes;
   const userSpeechMin = selected.stats.userSpeechDurationMinutes;
-  const otherSpeechMin = Math.max(0, durationMin - userSpeechMin);
-  const openQuestions = Math.max(0, Math.round(questions * 0.65));
-  const closedQuestions = Math.max(0, questions - openQuestions);
-  const otherQuestions = Math.max(0, Math.round(questions * 0.75));
-  const questionMax = Math.max(questions, otherQuestions, 1) * 1.15;
+  const otherSpeechMin = selected.stats.otherSpeechDurationMinutes || Math.max(0, durationMin - userSpeechMin);
+  const openQuestions = selected.stats.openQuestionCount;
+  const closedQuestions = selected.stats.closedQuestionCount;
+  const questionMax = Math.max(openQuestions, closedQuestions, 1) * 1.15;
   const transcriptWords = words(selected.transcript);
-  const uniqueWords = new Set(transcriptWords).size;
-  const totalWords = transcriptWords.length || Math.max(0, Math.round(selected.stats.estimatedWpm * durationMin));
+  const uniqueWords = selected.stats.uniqueWordCount || new Set(transcriptWords).size;
+  const totalWords = selected.stats.totalWordCount || transcriptWords.length || Math.max(0, Math.round(selected.stats.estimatedWpm * durationMin));
   const uniquePct = totalWords > 0 ? Math.round((uniqueWords / totalWords) * 100) : 0;
-  const fillers = fillerCounts(selected.transcript);
+  const fillers = selected.stats.fillerCounts.length ? selected.stats.fillerCounts : fillerCounts(selected.transcript);
   const fillerTotal = fillers.reduce((sum, item) => sum + item.count, 0);
-  const turnOffset = interruptions > 0 ? 160 : 220;
-  const energyScore = Math.max(0, Math.min(100, Math.round(82 - Math.abs(50 - talkPct) - interruptions * 3)));
-  const lsmScore = Math.max(0, Math.min(0.95, 0.68 + (questions >= 8 ? 0.07 : 0) + (Math.abs(50 - talkPct) <= 10 ? 0.06 : 0) - interruptions * 0.02));
+  const turnOffset = selected.stats.averageTurnOffsetMs;
+  const turnOffsetData = selected.stats.turnOffsetSeries;
+  const hasTurnOffset = turnOffsetData.length > 0;
+  const hasEnergySignals = selected.stats.energyScore > 0 && selected.stats.energySeriesUser.length > 1 && selected.stats.energySeriesOther.length > 1;
+  const energyScore = selected.stats.energyScore;
+  const energyAxes = [selected.stats.energyAxes[0] ?? 0, selected.stats.energyAxes[1] ?? 0, selected.stats.energyAxes[2] ?? 0];
+  const hasLsmSignals = selected.stats.lsmScore > 0;
+  const lsmScore = selected.stats.lsmScore;
+  const lsmUserValues = LSM_AXES.map((axis) => selected.stats.lsmDimensionsUser[axis.key] ?? 0);
+  const lsmReferenceValues = LSM_AXES.map((axis) => selected.stats.lsmDimensionsReference[axis.key] ?? 0);
   const goTab = (id: TabId) => router.navigate(TAB_HREF[id]);
 
   return (
@@ -197,18 +209,15 @@ export function AnalyticsScreen() {
         >
           <View style={styles.qRow}>
             <View style={styles.qBars}>
-              <QBar label="You" value={questions} color={colors.sage} sub="asked" max={questionMax} />
-              <QBar label="Them" value={otherQuestions} color={colors.lavender} sub="estimated" max={questionMax} />
+              <QBar label="Open" value={openQuestions} color={colors.sage} sub="questions" max={questionMax} />
+              <QBar label="Closed" value={closedQuestions} color={colors.lavender} sub="questions" max={questionMax} />
             </View>
             <View style={styles.qAnalysis}>
               <View style={[styles.miniCard, { backgroundColor: 'rgba(151,168,135,0.10)' }]}>
-                <Body style={styles.miniLabel}>Open / closed</Body>
+                <Body style={styles.miniLabel}>Total asked</Body>
                 <View style={styles.miniRow}>
-                  <Serif style={[styles.miniNum, { color: colors.sage }]}>{openQuestions}</Serif>
-                  <Body style={styles.miniUnit}>open</Body>
-                  <Body style={styles.miniDotSep}>·</Body>
-                  <Serif style={[styles.miniNum, { color: colors.ink2 }]}>{closedQuestions}</Serif>
-                  <Body style={styles.miniUnit}>closed</Body>
+                  <Serif style={[styles.miniNum, { color: colors.sage }]}>{questions}</Serif>
+                  <Body style={styles.miniUnit}>questions</Body>
                 </View>
                 <View style={styles.miniBar}>
                   <View style={{ width: `${questions ? (openQuestions / questions) * 100 : 0}%`, backgroundColor: colors.sage }} />
@@ -229,101 +238,113 @@ export function AnalyticsScreen() {
 
         {/* 3. Turn-floor offset */}
         <ExpandableMetric
-          eyebrow="Turn-floor offset" value={`+${turnOffset}`} unit="ms avg"
-          summary={`${interruptions} interruptions estimated across ${Math.round(durationMin)} minutes.`} accent={colors.terracotta} chartKind="line"
-          blurb="Approximate turn timing based on the interruption count saved for this debrief."
+          eyebrow="Turn-floor offset" value={hasTurnOffset ? `+${turnOffset}` : '—'} unit={hasTurnOffset ? 'ms avg' : 'not saved'}
+          summary={hasTurnOffset ? `${interruptions} interruptions estimated across ${Math.round(durationMin)} minutes.` : 'Turn timing was not saved for this debrief.'} accent={colors.terracotta} chartKind="line"
+          blurb={hasTurnOffset ? 'Approximate turn timing based on detected speaker changes in this saved debrief.' : 'New recordings save turn timing from detected speaker changes.'}
         >
-          <TurnOffsetChart
-            data={[
-              { t: '0:00', ms: -80 }, { t: '3:30', ms: 90 }, { t: '7:00', ms: 220 }, { t: '10:30', ms: 180 },
-              { t: '14:00', ms: 520 }, { t: '18:00', ms: 280 }, { t: '22:00', ms: 200 }, { t: '28:00', ms: 240 },
-            ]}
-            width={300} height={170}
-          />
-          <OffsetZoneLegend />
+          {hasTurnOffset ? (
+            <>
+              <TurnOffsetChart data={turnOffsetData} width={300} height={170} />
+              <OffsetZoneLegend />
+            </>
+          ) : (
+            <Body style={styles.unavailableText}>Record or import a new conversation to see turn timing here.</Body>
+          )}
         </ExpandableMetric>
 
         {/* 4. Energy mirroring */}
         <ExpandableMetric
-          eyebrow="Energy mirroring" value={`${energyScore}%`} unit="in tune"
-          summary="Estimated from balance and interruption signals." accent={colors.lavender} chartKind="line"
-          blurb="This will get more precise as richer per-conversation energy signals are saved."
+          eyebrow="Energy mirroring" value={hasEnergySignals ? `${energyScore}%` : '—'} unit={hasEnergySignals ? 'in tune' : 'not saved'}
+          summary={hasEnergySignals ? 'Calculated from saved vocal energy, pitch, and pace signals.' : 'Energy signals were not saved for this debrief.'} accent={colors.lavender} chartKind="line"
+          blurb={hasEnergySignals ? 'This is calculated from the audio saved for this debrief: volume convergence, pitch similarity, pace, and turn balance.' : 'New recordings save the vocal signals needed for this chart.'}
         >
-          <View style={styles.energyRow}>
-            <RingMeter value={energyScore} size={56} stroke={5} color={colors.lavender} label={String(energyScore)} />
-            <View style={{ flex: 1 }}>
-              <View style={styles.energyChartRow}>
-                <View style={styles.energyYAxis}>
-                  <Body style={styles.energyAxisLabel}>hi</Body>
-                  <Body style={styles.energyAxisLabel}>lo</Body>
-                </View>
-                <View style={styles.energyChart}>
-                  <EnergyWave you={youEnergy} them={themEnergy} width={180} height={62} />
-                  <View style={styles.energyXAxis}>
-                    <Body style={styles.energyXLabel}>0:00</Body>
-                    <Body style={[styles.energyXLabel, { letterSpacing: 1, textTransform: 'uppercase' }]}>energy · time</Body>
-                    <Body style={styles.energyXLabel}>28:00</Body>
+          {hasEnergySignals ? (
+            <>
+              <View style={styles.energyRow}>
+                <RingMeter value={energyScore} size={56} stroke={5} color={colors.lavender} label={String(energyScore)} />
+                <View style={{ flex: 1 }}>
+                  <View style={styles.energyChartRow}>
+                    <View style={styles.energyYAxis}>
+                      <Body style={styles.energyAxisLabel}>hi</Body>
+                      <Body style={styles.energyAxisLabel}>lo</Body>
+                    </View>
+                    <View style={styles.energyChart}>
+                      <EnergyWave you={selected.stats.energySeriesUser} them={selected.stats.energySeriesOther} width={180} height={62} />
+                      <View style={styles.energyXAxis}>
+                        <Body style={styles.energyXLabel}>0:00</Body>
+                        <Body style={[styles.energyXLabel, { letterSpacing: 1, textTransform: 'uppercase' }]}>energy · time</Body>
+                        <Body style={styles.energyXLabel}>{Math.round(durationMin)}:00</Body>
+                      </View>
+                    </View>
+                  </View>
+                  <View style={styles.energyPips}>
+                    <Pip color={colors.terracotta}>You</Pip>
+                    <Pip color={colors.lavender}>Them</Pip>
                   </View>
                 </View>
               </View>
-              <View style={styles.energyPips}>
-                <Pip color={colors.terracotta}>You</Pip>
-                <Pip color={colors.lavender}>Them</Pip>
+              <View style={styles.syncSection}>
+                <Body style={styles.syncHead}>Match by dimension</Body>
+                <SyncBars dims={[
+                  { label: 'Volume convergence', you: energyAxes[0], them: 1 },
+                  { label: 'Pitch', you: energyAxes[1], them: 1 },
+                  { label: 'Speech rate', you: energyAxes[2], them: 1 },
+                ]} />
               </View>
-            </View>
-          </View>
-          <View style={styles.syncSection}>
-            <Body style={styles.syncHead}>Match by dimension</Body>
-            <SyncBars dims={[
-              { label: 'Volume convergence', you: 0.78, them: 0.45 },
-              { label: 'Pitch', you: 0.72, them: 0.68 },
-              { label: 'Speech rate', you: 0.58, them: 0.55 },
-            ]} />
-          </View>
+            </>
+          ) : (
+            <Body style={styles.unavailableText}>Record or import a new conversation to see vocal energy matching here.</Body>
+          )}
         </ExpandableMetric>
 
         {/* 5. Linguistic style match */}
         <ExpandableMetric
-          eyebrow="Linguistic style match" value={lsmScore.toFixed(2)} unit="LSM score"
-          summary={lsmScore >= 0.7 ? 'Estimated high alignment.' : 'Alignment is still forming.'} accent={colors.lavender} chartKind="radar"
-          blurb="Estimated from available conversation signals until full function-word matching is stored."
+          eyebrow="Linguistic style match" value={hasLsmSignals ? lsmScore.toFixed(2) : '—'} unit={hasLsmSignals ? 'LSM score' : 'not saved'}
+          summary={hasLsmSignals ? (lsmScore >= 0.7 ? 'High style alignment.' : 'Alignment is still forming.') : 'Style-match signals were not saved for this debrief.'} accent={colors.lavender} chartKind="radar"
+          blurb={hasLsmSignals ? 'Calculated from saved function-word patterns and vocal mirroring signals for this debrief, compared with a conversational reference profile.' : 'New recordings save the signals needed for style-match scoring.'}
         >
-          <View style={{ alignItems: 'center', marginBottom: 4 }}>
-            <RadarChart
-              size={240} rings={4}
-              axes={[{ label: 'Pronouns' }, { label: 'Articles' }, { label: 'Prepositions' }, { label: 'Conjunctions' }, { label: 'Quantifiers' }, { label: 'Aux. verbs' }]}
-              series={[
-                { values: [0.82, 0.40, 0.72, 0.78, 0.30, 0.66], color: colors.terracotta, fill: 0.32, strokeWidth: 1.8 },
-                { values: [0.62, 0.60, 0.55, 0.70, 0.48, 0.80], color: colors.lavender, fill: 0.32, strokeWidth: 1.8 },
-              ]}
-            />
-          </View>
-          <View style={styles.lsmLegend}>
-            <View style={styles.lsmLegendItem}>
-              <View style={[styles.lsmSwatch, { backgroundColor: colors.terracotta, borderColor: colors.terracotta }]} />
-              <Body style={styles.lsmLegendText}>you</Body>
-            </View>
-            <View style={styles.lsmLegendItem}>
-              <View style={[styles.lsmSwatch, { backgroundColor: colors.lavender, borderColor: colors.lavender }]} />
-              <Body style={styles.lsmLegendText}>them</Body>
-            </View>
-            <Body style={styles.lsmLegendText}>overlap = match</Body>
-          </View>
-          <View style={styles.lsmScore}>
-            <View style={styles.lsmScoreHead}>
-              <Body style={{ fontSize: 11, color: colors.ink }}>Overall LSM</Body>
-              <Serif style={{ fontSize: 16, color: colors.lavender }}>{lsmScore.toFixed(2)}</Serif>
-            </View>
-            <View style={styles.lsmTrack}>
-              <View style={styles.lsmBand} />
-              <View style={[styles.lsmDot, { left: `${Math.round(lsmScore * 100)}%` }]} />
-            </View>
-            <View style={styles.lsmScaleRow}>
-              <Body style={styles.lsmScaleText}>0.0 · no match</Body>
-              <Body style={[styles.lsmScaleText, { color: colors.sage, fontFamily: fonts.bodySemibold }]}>0.70+ high LSM</Body>
-              <Body style={styles.lsmScaleText}>1.0 · perfect</Body>
-            </View>
-          </View>
+          {hasLsmSignals ? (
+            <>
+              <View style={{ alignItems: 'center', marginBottom: 4 }}>
+                <RadarChart
+                  size={240} rings={4}
+                  axes={LSM_AXES.map((axis) => ({ label: axis.label }))}
+                  series={[
+                    { values: lsmUserValues, color: colors.terracotta, fill: 0.32, strokeWidth: 1.8 },
+                    { values: lsmReferenceValues, color: colors.lavender, fill: 0.32, strokeWidth: 1.8 },
+                  ]}
+                />
+              </View>
+              <View style={styles.lsmLegend}>
+                <View style={styles.lsmLegendItem}>
+                  <View style={[styles.lsmSwatch, { backgroundColor: colors.terracotta, borderColor: colors.terracotta }]} />
+                  <Body style={styles.lsmLegendText}>you</Body>
+                </View>
+                <View style={styles.lsmLegendItem}>
+                  <View style={[styles.lsmSwatch, { backgroundColor: colors.lavender, borderColor: colors.lavender }]} />
+                  <Body style={styles.lsmLegendText}>reference</Body>
+                </View>
+                <Body style={styles.lsmLegendText}>overlap = alignment</Body>
+              </View>
+              <View style={styles.lsmScore}>
+                <View style={styles.lsmScoreHead}>
+                  <Body style={{ fontSize: 11, color: colors.ink }}>Overall LSM</Body>
+                  <Serif style={{ fontSize: 16, color: colors.lavender }}>{lsmScore.toFixed(2)}</Serif>
+                </View>
+                <View style={styles.lsmTrack}>
+                  <View style={styles.lsmBand} />
+                  <View style={[styles.lsmDot, { left: `${Math.round(lsmScore * 100)}%` }]} />
+                </View>
+                <View style={styles.lsmScaleRow}>
+                  <Body style={styles.lsmScaleText}>0.0 · no match</Body>
+                  <Body style={[styles.lsmScaleText, { color: colors.sage, fontFamily: fonts.bodySemibold }]}>0.70+ high LSM</Body>
+                  <Body style={styles.lsmScaleText}>1.0 · perfect</Body>
+                </View>
+              </View>
+            </>
+          ) : (
+            <Body style={styles.unavailableText}>Record or import a new conversation to see style matching here.</Body>
+          )}
         </ExpandableMetric>
 
         {/* 6. Vocabulary */}
@@ -409,6 +430,7 @@ const styles = StyleSheet.create({
 
   // Vocabulary
   vocabLine: { fontSize: 13.5, color: colors.ink2, lineHeight: 20, marginBottom: 16 },
+  unavailableText: { fontSize: 13, color: colors.muted, lineHeight: 20 },
   vocabHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 },
   vocabHeadMeta: { fontSize: 10.5, color: colors.muted, letterSpacing: 0.6 },
 });
