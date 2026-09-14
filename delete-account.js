@@ -13,7 +13,7 @@ async function responseBody(response) {
   return body;
 }
 async function setup() {
-  config = await fetch('./release.json').then(responseBody);
+  config = await fetch('./release.json', { cache: 'no-store' }).then(responseBody);
   if (!config.backendUrl || !config.privacyApproved || !config.supportEmail || !config.operatorName) {
     document.querySelector('#availability').textContent = 'Web deletion is being configured before public launch. No email is collected on this page while it is unavailable.';
     token = null; return;
